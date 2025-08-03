@@ -1,8 +1,9 @@
-use alith::{Agent, LLM, EmbeddingsBuilder, InMemoryStorage, Chat};
+use alith::{Agent, LLM, Chat};
 use tokio::sync::RwLock;
 use std::collections::HashMap;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use crate::config::Config;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MuseTraits {
@@ -19,12 +20,14 @@ pub struct MuseAgentSet {
 }
 
 pub struct MuseOrchestrator {
+    config: Config,
     agents: RwLock<HashMap<String, MuseAgentSet>>,
 }
 
 impl MuseOrchestrator {
-    pub async fn new() -> Result<Self> {
+    pub async fn new(config: Config) -> Result<Self> {
         Ok(Self {
+            config,
             agents: RwLock::new(HashMap::new()),
         })
     }
@@ -48,9 +51,51 @@ impl MuseOrchestrator {
         Ok(agent_set)
     }
     
+    fn get_local_model_name(&self, _model_url: &str) -> String {
+        // For now, use a working model name that should be available in Alith
+        // This will use the default model configuration
+        "gpt-4".to_string()
+    }
+    
+    fn select_model_for_trait(&self, trait_name: &str, trait_value: u8) -> &str {
+        match trait_name {
+            "creativity" => {
+                match trait_value {
+                    80..=100 => &self.config.creative_model_url,
+                    60..=79 => &self.config.creative_model_url,
+                    _ => &self.config.base_model_url,
+                }
+            },
+            "wisdom" => {
+                match trait_value {
+                    70..=100 => &self.config.wisdom_model_url,
+                    _ => &self.config.base_model_url,
+                }
+            },
+            "humor" => {
+                match trait_value {
+                    60..=100 => &self.config.humor_model_url,
+                    _ => &self.config.base_model_url,
+                }
+            },
+            "empathy" => {
+                match trait_value {
+                    70..=100 => &self.config.empathy_model_url,
+                    _ => &self.config.base_model_url,
+                }
+            },
+            _ => &self.config.base_model_url,
+        }
+    }
+
     async fn create_agent_set(&self, traits: &MuseTraits) -> Result<MuseAgentSet> {
-        let model = LLM::from_model_name("gpt-4")?;
-        let personality_agent = Agent::new("Personality", model)
+        // Select personality model based on dominant trait
+        let dominant_trait = self.get_dominant_trait(traits);
+        let personality_model_url = self.select_model_for_trait(&dominant_trait.0, dominant_trait.1);
+        let personality_model_name = self.get_local_model_name(personality_model_url);
+        let personality_model = LLM::from_model_name(&personality_model_name)?;
+        
+        let personality_agent = Agent::new("Personality", personality_model)
             .preamble(&format!(
                 "You embody a muse with these traits:\n\
                 Creativity: {}/100 - {}\n\
@@ -64,47 +109,25 @@ impl MuseOrchestrator {
                 traits.empathy, Self::describe_trait_level(traits.empathy)
             ));
         
-        let memory_agent = self.create_memory_agent(traits).await?;
-        let creative_agent = self.create_creative_agent(traits).await?;
+        // Create memory agent
+        let memory_model_name = self.get_local_model_name(&self.config.base_model_url);
+        let memory_model = LLM::from_model_name(&memory_model_name)?;
+        let memory_agent = Agent::new("Memory", memory_model)
+            .preamble(&format!(
+                "You manage memories and ensure contextual consistency in conversations. \
+                Remember that you are a muse with creativity: {}, wisdom: {}, humor: {}, empathy: {}.",
+                traits.creativity, traits.wisdom, traits.humor, traits.empathy
+            ));
         
-        Ok(MuseAgentSet {
-            personality_agent,
-            memory_agent,
-            creative_agent,
-        })
-    }
-    
-    async fn create_memory_agent(&self, traits: &MuseTraits) -> Result<Agent<LLM>> {
-        let base_model = LLM::from_model_name("gpt-4")?;
-        let embeddings_model = base_model.embeddings_model("text-embedding-3-small");
-        
-        let base_memories = vec![
-            format!("I am a muse with creativity level {}", traits.creativity),
-            format!("I approach problems with wisdom level {}", traits.wisdom),
-            format!("I express humor at level {}", traits.humor),
-            format!("I connect with others through empathy level {}", traits.empathy),
-            "I am here to inspire and guide through meaningful conversation".to_string(),
-            "I remember past interactions to build deeper connections".to_string(),
-        ];
-        
-        let data = EmbeddingsBuilder::new(embeddings_model.clone())
-            .documents(base_memories)
-            .map_err(|e| anyhow::anyhow!("Embeddings error: {:?}", e))?
-            .build()
-            .await
-            .map_err(|e| anyhow::anyhow!("Embeddings build error: {:?}", e))?;
-        
-        let storage = InMemoryStorage::from_multiple_documents(embeddings_model, data);
-        
-        let memory_model = LLM::from_model_name("gpt-4")?;
-        Ok(Agent::new("Memory", memory_model)
-            .preamble("You manage memories and ensure contextual consistency in conversations")
-            .store_index(1, storage))
-    }
-    
-    async fn create_creative_agent(&self, traits: &MuseTraits) -> Result<Agent<LLM>> {
-        let creative_model = LLM::from_model_name("gpt-4")?;
-        Ok(Agent::new("Creative", creative_model)
+        // Create creative agent
+        let creative_model_url = if traits.creativity > 60 {
+            &self.config.creative_model_url
+        } else {
+            &self.config.base_model_url
+        };
+        let creative_model_name = self.get_local_model_name(creative_model_url);
+        let creative_model = LLM::from_model_name(&creative_model_name)?;
+        let creative_agent = Agent::new("Creative", creative_model)
             .preamble(&format!(
                 "Generate creative and inspiring responses that spark imagination. \
                 Your creativity level is {}/100, so {}. \
@@ -115,8 +138,28 @@ impl MuseOrchestrator {
                     34..=66 => "balance creativity with practicality",
                     _ => "be highly imaginative and unconventional in your ideas"
                 }
-            )))
+            ));
+        
+        Ok(MuseAgentSet {
+            personality_agent,
+            memory_agent,
+            creative_agent,
+        })
     }
+    
+    fn get_dominant_trait(&self, traits: &MuseTraits) -> (String, u8) {
+        let trait_values = vec![
+            ("creativity".to_string(), traits.creativity),
+            ("wisdom".to_string(), traits.wisdom),
+            ("humor".to_string(), traits.humor),
+            ("empathy".to_string(), traits.empathy),
+        ];
+        
+        trait_values.into_iter()
+            .max_by_key(|(_, value)| *value)
+            .unwrap_or(("creativity".to_string(), traits.creativity))
+    }
+    
     
     pub async fn generate_response(
         &self,
@@ -133,12 +176,24 @@ impl MuseOrchestrator {
             None => "No previous context available".to_string(),
         };
         
-        // Generate base personality response
+        // Create personality prompt with muse characteristics
         let personality_prompt = format!(
-            "User: {}\nContext: {}\nRespond authentically as the muse with your established personality.",
+            "You embody a muse with these traits:\n\
+            Creativity: {}/100 - {}\n\
+            Wisdom: {}/100 - {}\n\
+            Humor: {}/100 - {}\n\
+            Empathy: {}/100 - {}\n\
+            Maintain these characteristics in all responses. Be authentic to your personality.\n\n\
+            User: {}\nContext: {}\n\n\
+            Respond authentically as the muse:",
+            traits.creativity, Self::describe_trait_level(traits.creativity),
+            traits.wisdom, Self::describe_trait_level(traits.wisdom),
+            traits.humor, Self::describe_trait_level(traits.humor),
+            traits.empathy, Self::describe_trait_level(traits.empathy),
             user_message, context_str
         );
         
+        // Generate base personality response
         let personality_response = agents.personality_agent
             .prompt(&personality_prompt)
             .await?;
@@ -158,7 +213,7 @@ impl MuseOrchestrator {
             return Ok(self.blend_responses(&personality_response, &creative_enhancement, traits));
         }
         
-        Ok(personality_response)
+        Ok(personality_response.to_string())
     }
     
     fn blend_responses(&self, personality: &str, creative: &str, traits: &MuseTraits) -> String {

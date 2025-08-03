@@ -39,7 +39,7 @@ async fn main() -> Result<(), anyhow::Error> {
     
     // Initialize systems
     let blockchain_client = Arc::new(BlockchainClient::new(&config).await?);
-    let orchestrator = Arc::new(MuseOrchestrator::new().await?);
+    let orchestrator = Arc::new(MuseOrchestrator::new(config.clone()).await?);
     let memory_system = Arc::new(MemorySystem::new(&config).await?);
     let plugin_system = Arc::new(PluginSystem::new().await?);
     let verification_system = Arc::new(VerificationSystem::new(&config)?);
