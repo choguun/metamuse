@@ -1,77 +1,101 @@
 // contracts/CommitmentVerifier.sol
 pragma solidity ^0.8.20;
 
-/**
- * @title CommitmentVerifier - Proves off-chain computation is authentic
- * @notice This is like a notary public for AI responses
- */
-contract CommitmentVerifier {
-    
-    // The backend's public key - this is what creates trust
-    address public immutable trustedSigner;
-    
-    // Prevent replay attacks
-    mapping(bytes32 => bool) public usedCommitments;
-    
-    event CommitmentVerified(uint256 indexed museId, bytes32 commitmentHash);
-    
-    constructor(address _trustedSigner) {
-        trustedSigner = _trustedSigner;
-    }
-    
-    /**
-     * @notice Verify that a response genuinely came from our backend
-     * @dev This is the bridge between off-chain computation and on-chain trust
-     */
+interface ICommitmentVerifier {
     function verifyCommitment(
         uint256 museId,
         bytes32 museDnaHash,
         bytes32 commitmentHash,
         bytes calldata signature
-    ) external returns (bool) {
-        // Ensure this proof hasn't been used before
-        require(!usedCommitments[commitmentHash], "Commitment already used");
+    ) external returns (bool);
+}
+
+/**
+ * @title CommitmentVerifier - Cryptographic verification for off-chain AI computation
+ * @notice Ensures AI responses are authentic and haven't been tampered with
+ * @dev Implements commit-reveal scheme with ECDSA signature verification
+ */
+contract CommitmentVerifier is ICommitmentVerifier {
+    
+    address public immutable trustedSigner;
+    mapping(bytes32 => bool) public usedNonces;
+    
+    event SignerUpdated(address indexed oldSigner, address indexed newSigner);
+    event CommitmentVerified(uint256 indexed museId, bytes32 commitmentHash);
+    
+    constructor(address _trustedSigner) {
+        require(_trustedSigner != address(0), "Invalid signer");
+        trustedSigner = _trustedSigner;
+    }
+    
+    /**
+     * @notice Verify that an AI interaction commitment is authentic
+     * @dev Validates off-chain computation with cryptographic proof
+     * @param _museId The muse token ID
+     * @param _museDnaHash The muse's unique DNA hash
+     * @param _commitmentHash Hash of the interaction data
+     * @param _signature ECDSA signature from trusted backend
+     */
+    function verifyCommitment(
+        uint256 _museId,
+        bytes32 _museDnaHash,
+        bytes32 _commitmentHash,
+        bytes calldata _signature
+    ) external override returns (bool) {
+        require(_signature.length == 65, "Invalid signature length");
         
-        // Recreate what the backend should have signed
+        // Create the message that should have been signed
         bytes32 message = keccak256(abi.encodePacked(
-            museId,
-            museDnaHash,
-            commitmentHash,
-            block.chainid  // Prevent cross-chain replay
+            _museId,
+            _museDnaHash,
+            _commitmentHash,
+            block.chainid,
+            address(this)
         ));
         
-        // Verify the signature
-        address signer = recoverSigner(message, signature);
-        require(signer == trustedSigner, "Invalid signer");
+        bytes32 ethSignedMessageHash = keccak256(abi.encodePacked(
+            "\x19Ethereum Signed Message:\n32",
+            message
+        ));
         
-        // Mark as used
-        usedCommitments[commitmentHash] = true;
+        address signer = recoverSigner(ethSignedMessageHash, _signature);
         
-        emit CommitmentVerified(museId, commitmentHash);
-        return true;
+        if (signer == trustedSigner) {
+            emit CommitmentVerified(_museId, _commitmentHash);
+            return true;
+        }
+        
+        return false;
     }
     
-    // Standard signature recovery
-    function recoverSigner(bytes32 message, bytes memory sig) 
-        internal pure returns (address) 
-    {
-        bytes32 ethSignedMessage = keccak256(
-            abi.encodePacked("\x19Ethereum Signed Message:\n32", message)
-        );
-        
-        (bytes32 r, bytes32 s, uint8 v) = splitSignature(sig);
-        return ecrecover(ethSignedMessage, v, r, s);
+    /**
+     * @notice Recover the signer address from a message hash and signature
+     * @param _messageHash The hash that was signed
+     * @param _signature The ECDSA signature
+     */
+    function recoverSigner(
+        bytes32 _messageHash,
+        bytes memory _signature
+    ) internal pure returns (address) {
+        (bytes32 r, bytes32 s, uint8 v) = splitSignature(_signature);
+        return ecrecover(_messageHash, v, r, s);
     }
     
-    function splitSignature(bytes memory sig) 
-        internal pure returns (bytes32 r, bytes32 s, uint8 v) 
-    {
-        require(sig.length == 65, "Invalid signature length");
+    /**
+     * @notice Split a signature into its components
+     * @param _sig The signature to split
+     */
+    function splitSignature(bytes memory _sig) internal pure returns (
+        bytes32 r,
+        bytes32 s,
+        uint8 v
+    ) {
+        require(_sig.length == 65, "Invalid signature length");
         
         assembly {
-            r := mload(add(sig, 32))
-            s := mload(add(sig, 64))
-            v := byte(0, mload(add(sig, 96)))
+            r := mload(add(_sig, 32))
+            s := mload(add(_sig, 64))
+            v := byte(0, mload(add(_sig, 96)))
         }
     }
 }
