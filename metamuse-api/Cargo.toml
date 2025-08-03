@@ -1,0 +1,15 @@
+[package]
+name = "metamuse-api"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+alith = { git = "https://github.com/0xLazAI/alith", version = "0.11.0" }
+anyhow = "1.0.98"
+async-trait = "0.1.88"
+axum = "0.8.4"
+dotenv = "0.15.0"
+schemars = "1.0.4"
+serde = "1.0.219"
+thiserror = "2.0.12"
+tokio = "1.47.1"
