@@ -1,0 +1,26 @@
+# Rust
+ai-agent/target/
+ai-agent/Cargo.lock
+ai-agent/**/*.rs.bk
+ai-agent/*.pdb
+
+# Environment variables
+ai-agent/.env
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
