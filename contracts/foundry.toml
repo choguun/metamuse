@@ -18,8 +18,8 @@ remappings = [
 metis_hyperion_testnet = "https://hyperion-testnet.metisdevops.link"
 local = "http://localhost:8545"
 
-# Etherscan API keys and URLs for verification
-[etherscan]
-metis_hyperion_testnet = { key = "${METIS_API_KEY}", url = "https://hyperion-testnet-explorer.metisdevops.link/api" }
+# Etherscan API keys and URLs for verification (commented out for deployment)
+# [etherscan]
+# metis_hyperion_testnet = { key = "${METIS_API_KEY}", url = "https://hyperion-testnet-explorer.metisdevops.link/api" }
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
