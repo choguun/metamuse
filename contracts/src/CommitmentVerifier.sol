@@ -1,14 +1,7 @@
 // contracts/CommitmentVerifier.sol
 pragma solidity ^0.8.20;
 
-interface ICommitmentVerifier {
-    function verifyCommitment(
-        uint256 museId,
-        bytes32 museDnaHash,
-        bytes32 commitmentHash,
-        bytes calldata signature
-    ) external returns (bool);
-}
+import {ICommitmentVerifier} from "./ICommitmentVerifier.sol";
 
 /**
  * @title CommitmentVerifier - Cryptographic verification for off-chain AI computation
