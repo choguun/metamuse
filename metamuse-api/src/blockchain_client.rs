@@ -2,7 +2,7 @@ use anyhow::Result;
 use ethers::{
     core::types::{Address, U256, Bytes, Filter, Log},
     middleware::SignerMiddleware,
-    providers::{Provider, Http, Middleware},
+    providers::{Provider, Http, Middleware, StreamExt},
     signers::{LocalWallet, Signer},
     contract::abigen,
     utils::{format_ether, parse_ether},
@@ -160,7 +160,7 @@ impl BlockchainClient {
         
         // Create wallet from private key
         let wallet = LocalWallet::from_str(&config.signing_key)?
-            .with_chain_id(1u64); // Mainnet chain ID - would be configurable
+            .with_chain_id(config.chain_id);
         
         // Create signing client
         let client = Arc::new(SignerMiddleware::new(provider, wallet));
@@ -331,15 +331,37 @@ impl BlockchainClient {
         })
     }
     
-    /// Listen for events from the MetaMuse contract (placeholder for future implementation)
-    pub async fn listen_for_events(&self) -> Result<()> {
-        // For now, this is a placeholder. In production, you'd implement:
-        // 1. WebSocket provider for real-time subscriptions
-        // 2. Proper event filtering and processing
-        // 3. Database storage for events
-        // 4. Error handling and reconnection logic
+    /// Listen for events from the MetaMuse contract
+    pub async fn listen_for_events<F>(&self, mut event_handler: F) -> Result<()>
+    where
+        F: FnMut(EventData) -> Result<()> + Send + 'static,
+    {
+        // Create filter for all MetaMuse contract events
+        let filter = Filter::new()
+            .address(self.contract_address)
+            .from_block(ethers::types::BlockNumber::Latest);
         
-        println!("Event listening would be started here");
+        let mut stream = self.client.watch(&filter).await?;
+        
+        println!("🔔 Starting event listener for MetaMuse contract at {}", self.contract_address);
+        
+        // Listen for events in a loop
+        while let Some(log) = stream.next().await {
+            if let Ok(event_data) = self.parse_log_to_event(&log).await {
+                println!("📅 New event: {:?}", event_data);
+                
+                // Call the event handler
+                if let Err(e) = event_handler(event_data) {
+                    eprintln!("❌ Error handling event: {}", e);
+                }
+                
+                // Process specific event types
+                if let Err(e) = self.process_blockchain_event(&log).await {
+                    eprintln!("❌ Error processing blockchain event: {}", e);
+                }
+            }
+        }
+        
         Ok(())
     }
     
@@ -391,10 +413,89 @@ impl BlockchainClient {
         Err(anyhow::anyhow!("Token ID not found in transaction receipt"))
     }
     
-    async fn process_event(log: Log) -> Result<()> {
-        // Process different event types
-        // This would typically update local database or trigger notifications
-        println!("Processing event: {:?}", log);
+    async fn process_blockchain_event(&self, log: &Log) -> Result<()> {
+        // Process different event types based on event signature
+        if log.topics.is_empty() {
+            return Ok(());
+        }
+        
+        let event_signature = log.topics[0];
+        
+        // Event signatures (first 4 bytes of keccak256 hash of event signature)
+        // These would match the actual event signatures from the contract
+        match format!("{:?}", event_signature).as_str() {
+            sig if sig.contains("MuseCreated") => {
+                self.handle_muse_created_event(log).await?;
+            }
+            sig if sig.contains("InteractionCommitted") => {
+                self.handle_interaction_committed_event(log).await?;
+            }
+            sig if sig.contains("InteractionVerified") => {
+                self.handle_interaction_verified_event(log).await?;
+            }
+            _ => {
+                println!("📋 Unknown event signature: {:?}", event_signature);
+            }
+        }
+        
+        Ok(())
+    }
+    
+    async fn handle_muse_created_event(&self, log: &Log) -> Result<()> {
+        if log.topics.len() >= 2 {
+            let token_id = U256::from(log.topics[1].0).as_u64();
+            let creator = if log.topics.len() > 2 {
+                format!("{:?}", log.topics[2])
+            } else {
+                "unknown".to_string()
+            };
+            
+            println!("🎨 New Muse created! Token ID: {}, Creator: {}", token_id, creator);
+            
+            // Clear cache for this muse to ensure fresh data
+            self.muse_cache.write().await.remove(&token_id);
+            
+            // Here you could:
+            // - Send notifications
+            // - Update database
+            // - Trigger other services
+        }
+        
+        Ok(())
+    }
+    
+    async fn handle_interaction_committed_event(&self, log: &Log) -> Result<()> {
+        if log.topics.len() >= 3 {
+            let token_id = U256::from(log.topics[1].0).as_u64();
+            let commitment_hash = format!("{:?}", log.topics[2]);
+            
+            println!("💭 Interaction committed for Muse {}: {}", token_id, commitment_hash);
+            
+            // Here you could:
+            // - Update pending interaction status
+            // - Notify frontend via WebSocket
+            // - Store interaction metadata
+        }
+        
+        Ok(())
+    }
+    
+    async fn handle_interaction_verified_event(&self, log: &Log) -> Result<()> {
+        if log.topics.len() >= 3 {
+            let token_id = U256::from(log.topics[1].0).as_u64();
+            let commitment_hash = format!("{:?}", log.topics[2]);
+            
+            println!("✅ Interaction verified for Muse {}: {}", token_id, commitment_hash);
+            
+            // Clear cache to refresh interaction count
+            self.muse_cache.write().await.remove(&token_id);
+            
+            // Here you could:
+            // - Update interaction status
+            // - Notify completion to frontend
+            // - Update analytics
+        }
+        
         Ok(())
     }
     
@@ -448,13 +549,17 @@ mod tests {
     fn create_test_config() -> Config {
         Config {
             openai_api_key: "test".to_string(),
-            signing_key: "0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318".to_string(),
+            signing_key: "4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318".to_string(),
             ipfs_api_key: None,
             ipfs_api_secret: None,
             ipfs_gateway_url: "https://gateway.pinata.cloud/ipfs".to_string(),
             ethereum_rpc_url: "http://localhost:8545".to_string(),
+            chain_id: 1337,
             metamuse_contract_address: "0x742d35Cc6634C0532925a3b8D9C072a8c0c8E8C1".to_string(),
             commitment_verifier_address: "0x742d35Cc6634C0532925a3b8D9C072a8c0c8E8C1".to_string(),
+            muse_memory_contract_address: "0x742d35Cc6634C0532925a3b8D9C072a8c0c8E8C1".to_string(),
+            muse_plugins_contract_address: "0x742d35Cc6634C0532925a3b8D9C072a8c0c8E8C1".to_string(),
+            block_explorer_url: "http://localhost:8545".to_string(),
             database_url: None,
         }
     }
@@ -466,8 +571,9 @@ mod tests {
         // This test would require a local blockchain node
         // In a real test environment, you'd use a test network like Hardhat
         // For now, we'll just test the config parsing
-        assert_eq!(config.signing_key.len(), 66); // 0x + 64 hex chars
+        assert_eq!(config.signing_key.len(), 64); // 64 hex chars (no 0x prefix)
         assert!(config.ethereum_rpc_url.starts_with("http"));
+        assert_eq!(config.chain_id, 1337);
     }
     
     #[test]

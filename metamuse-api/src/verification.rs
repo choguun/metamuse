@@ -67,7 +67,7 @@ impl VerificationSystem {
             signing_key,
             public_key,
             secp,
-            chain_id: 1, // Mainnet - in production, this would be configurable
+            chain_id: config.chain_id,
             contract_address: addr_bytes,
         })
     }
