@@ -6,12 +6,12 @@ export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost
 // Blockchain Configuration
 export const CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID) || 133717; // Default to Metis Hyperion Testnet
 
-// Contract Addresses (will be updated after deployment)
+// Contract Addresses (deployed on Metis Hyperion Testnet)
 export const CONTRACTS: ContractAddresses = {
-  MetaMuse: (process.env.NEXT_PUBLIC_METAMUSE_CONTRACT || '0x742d35Cc6634C0532925a3b8D9C072a8c0c8E8C1') as `0x${string}`,
-  CommitmentVerifier: (process.env.NEXT_PUBLIC_COMMITMENT_VERIFIER_CONTRACT || '0x742d35Cc6634C0532925a3b8D9C072a8c0c8E8C1') as `0x${string}`,
-  MuseMemory: (process.env.NEXT_PUBLIC_MUSE_MEMORY_CONTRACT || '0x742d35Cc6634C0532925a3b8D9C072a8c0c8E8C1') as `0x${string}`,
-  MusePlugins: (process.env.NEXT_PUBLIC_MUSE_PLUGINS_CONTRACT || '0x742d35Cc6634C0532925a3b8D9C072a8c0c8E8C1') as `0x${string}`,
+  MetaMuse: (process.env.NEXT_PUBLIC_METAMUSE_CONTRACT || '0xeB4a6CC2b98233Fe6452b869E60C6aB095B22E21') as `0x${string}`,
+  CommitmentVerifier: (process.env.NEXT_PUBLIC_COMMITMENT_VERIFIER_CONTRACT || '0xeD467634407855e9F48C83f5800Daa16fa859597') as `0x${string}`,
+  MuseMemory: (process.env.NEXT_PUBLIC_MUSE_MEMORY_CONTRACT || '0xbfb46F49e50D1e4A591C927E47E22579EC55BEFA') as `0x${string}`,
+  MusePlugins: (process.env.NEXT_PUBLIC_MUSE_PLUGINS_CONTRACT || '0xCeE0fD2CfbDeA00338514940FF76cc42eb833fEf') as `0x${string}`,
 };
 
 // Contract ABIs - Simplified for frontend usage

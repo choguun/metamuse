@@ -6,7 +6,7 @@ import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagm
 import { motion, AnimatePresence } from 'framer-motion';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { type MuseData } from '@/types';
-import { METAMUSE_ABI, CONTRACTS, PERSONALITY_COLORS } from '@/constants';
+import { METAMUSE_ABI, CONTRACTS, PERSONALITY_COLORS, API_BASE_URL } from '@/constants';
 
 interface ChatMessage {
   id: string;
@@ -67,13 +67,13 @@ export default function ChatPage() {
       setIsLoading(true);
       
       // Fetch muse data
-      const museResponse = await fetch(`/api/v1/muses/${museId}`);
+      const museResponse = await fetch(`${API_BASE_URL}/api/v1/muses/${museId}`);
       if (!museResponse.ok) throw new Error('Muse not found');
       const museData = await museResponse.json();
       setMuse(museData);
       
       // Initialize or get existing chat session
-      const sessionResponse = await fetch(`/api/v1/muses/${museId}/chat/session`, {
+      const sessionResponse = await fetch(`${API_BASE_URL}/api/v1/muses/${museId}/chat/session`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_address: address }),
@@ -140,7 +140,7 @@ export default function ChatPage() {
       setIsTyping(true);
       
       // Send message to backend
-      const response = await fetch(`/api/v1/muses/${museId}/chat/message`, {
+      const response = await fetch(`${API_BASE_URL}/api/v1/muses/${museId}/chat/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

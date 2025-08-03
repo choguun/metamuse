@@ -6,7 +6,7 @@ import { useAccount } from 'wagmi';
 import { motion } from 'framer-motion';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { type MuseData } from '@/types';
-import { PERSONALITY_COLORS } from '@/constants';
+import { PERSONALITY_COLORS, API_BASE_URL } from '@/constants';
 
 export default function Gallery() {
   const { isConnected, address } = useAccount();
@@ -25,7 +25,7 @@ export default function Gallery() {
   const fetchUserMuses = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch(`/api/v1/muses/owner/${address}`);
+      const response = await fetch(`${API_BASE_URL}/api/v1/muses/owner/${address}`);
       
       if (!response.ok) {
         throw new Error('Failed to fetch muses');

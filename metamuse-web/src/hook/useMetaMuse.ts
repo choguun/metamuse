@@ -2,7 +2,7 @@
 import { useWriteContract, useWaitForTransactionReceipt, useAccount } from 'wagmi';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { METAMUSE_ABI, CONTRACTS } from '@/constants';
+import { METAMUSE_ABI, CONTRACTS, API_BASE_URL } from '@/constants';
 import { type MuseTraits } from '@/types';
 
 interface PendingMuse {
@@ -30,7 +30,7 @@ export function useMetaMuse() {
       if (!address) throw new Error('Wallet not connected');
       
       // 1. Call backend to prepare muse
-      const preparation = await fetch('/api/v1/muses/prepare', {
+      const preparation = await fetch(`${API_BASE_URL}/api/v1/muses/prepare`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ traits, creator_address: address }),

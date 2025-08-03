@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { motion } from 'framer-motion';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { METAMUSE_ABI, CONTRACTS, PERSONALITY_COLORS, TRAIT_DESCRIPTIONS } from '@/constants';
+import { METAMUSE_ABI, CONTRACTS, PERSONALITY_COLORS, TRAIT_DESCRIPTIONS, API_BASE_URL } from '@/constants';
 import { type MuseTraits } from '@/types';
 import { PersonalitySlider } from '@/components/ui/PersonalitySlider';
 import { MusePreview } from '@/components/ui/MusePreview';
@@ -37,7 +37,7 @@ export default function CreateMuse() {
     setIsCreating(true);
     try {
       // First, prepare the muse on the backend
-      const response = await fetch('/api/v1/muses/prepare', {
+      const response = await fetch(`${API_BASE_URL}/api/v1/muses/prepare`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(traits),
@@ -63,7 +63,7 @@ export default function CreateMuse() {
 
   const handlePreviewInteraction = async () => {
     try {
-      const response = await fetch('/api/v1/muses/prepare', {
+      const response = await fetch(`${API_BASE_URL}/api/v1/muses/prepare`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(traits),

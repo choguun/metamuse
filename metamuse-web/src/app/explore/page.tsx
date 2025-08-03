@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { type MuseData } from '@/types';
-import { PERSONALITY_COLORS } from '@/constants';
+import { PERSONALITY_COLORS, API_BASE_URL } from '@/constants';
 
 interface ExploreFilters {
   sortBy: 'newest' | 'interactions' | 'random';
@@ -33,7 +33,7 @@ export default function Explore() {
         limit: '12',
       });
       
-      const response = await fetch(`/api/v1/muses/explore?${params}`);
+      const response = await fetch(`${API_BASE_URL}/api/v1/muses/explore?${params}`);
       
       if (!response.ok) {
         throw new Error('Failed to fetch muses');
