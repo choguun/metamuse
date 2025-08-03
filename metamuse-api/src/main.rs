@@ -5,6 +5,7 @@ use dotenv::dotenv;
 
 mod config;
 mod agent_workflow;
+mod blockchain_client;
 mod muse_orchestrator;
 mod route;
 mod persist_memory;
@@ -13,6 +14,7 @@ mod tools;
 mod verification;
 
 use crate::config::Config;
+use crate::blockchain_client::BlockchainClient;
 use crate::muse_orchestrator::MuseOrchestrator;
 use crate::persist_memory::MemorySystem;
 use crate::plugin_system::PluginSystem;
@@ -21,6 +23,7 @@ use crate::verification::VerificationSystem;
 #[derive(Clone)]
 pub struct AppState {
     pub config: Config,
+    pub blockchain_client: Arc<BlockchainClient>,
     pub orchestrator: Arc<MuseOrchestrator>,
     pub memory_system: Arc<MemorySystem>,
     pub plugin_system: Arc<PluginSystem>,
@@ -35,6 +38,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let config = Config::from_env()?;
     
     // Initialize systems
+    let blockchain_client = Arc::new(BlockchainClient::new(&config).await?);
     let orchestrator = Arc::new(MuseOrchestrator::new().await?);
     let memory_system = Arc::new(MemorySystem::new(&config).await?);
     let plugin_system = Arc::new(PluginSystem::new().await?);
@@ -43,6 +47,7 @@ async fn main() -> Result<(), anyhow::Error> {
     // Create app state
     let app_state = Arc::new(AppState {
         config,
+        blockchain_client,
         orchestrator,
         memory_system,
         plugin_system,

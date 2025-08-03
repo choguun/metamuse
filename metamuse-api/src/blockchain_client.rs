@@ -1,0 +1,482 @@
+use anyhow::Result;
+use ethers::{
+    core::types::{Address, U256, Bytes, Filter, Log},
+    middleware::SignerMiddleware,
+    providers::{Provider, Http, Middleware},
+    signers::{LocalWallet, Signer},
+    contract::abigen,
+    utils::{format_ether, parse_ether},
+};
+use serde::{Deserialize, Serialize};
+use std::{sync::Arc, str::FromStr, collections::HashMap};
+use tokio::sync::RwLock;
+use crate::{config::Config, muse_orchestrator::MuseTraits};
+
+// Generate contract bindings from ABI
+abigen!(
+    MetaMuseContract,
+    r#"[
+        {
+            "inputs": [
+                {"internalType": "uint8", "name": "_creativity", "type": "uint8"},
+                {"internalType": "uint8", "name": "_wisdom", "type": "uint8"},
+                {"internalType": "uint8", "name": "_humor", "type": "uint8"},
+                {"internalType": "uint8", "name": "_empathy", "type": "uint8"}
+            ],
+            "name": "createMuse",
+            "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+            "stateMutability": "nonpayable",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {"internalType": "uint256", "name": "_tokenId", "type": "uint256"},
+                {"internalType": "bytes32", "name": "_commitmentHash", "type": "bytes32"}
+            ],
+            "name": "commitInteraction",
+            "outputs": [],
+            "stateMutability": "nonpayable",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {"internalType": "uint256", "name": "_tokenId", "type": "uint256"},
+                {"internalType": "bytes32", "name": "_commitmentHash", "type": "bytes32"},
+                {"internalType": "bytes", "name": "_signature", "type": "bytes"}
+            ],
+            "name": "verifyInteraction",
+            "outputs": [],
+            "stateMutability": "nonpayable",
+            "type": "function"
+        },
+        {
+            "inputs": [{"internalType": "uint256", "name": "_tokenId", "type": "uint256"}],
+            "name": "getMuseData",
+            "outputs": [
+                {"internalType": "uint8", "name": "creativity", "type": "uint8"},
+                {"internalType": "uint8", "name": "wisdom", "type": "uint8"},
+                {"internalType": "uint8", "name": "humor", "type": "uint8"},
+                {"internalType": "uint8", "name": "empathy", "type": "uint8"},
+                {"internalType": "bytes32", "name": "dnaHash", "type": "bytes32"},
+                {"internalType": "uint256", "name": "birthBlock", "type": "uint256"},
+                {"internalType": "uint256", "name": "totalInteractions", "type": "uint256"},
+                {"internalType": "address", "name": "owner", "type": "address"}
+            ],
+            "stateMutability": "view",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {"internalType": "uint256", "name": "_tokenId", "type": "uint256"},
+                {"internalType": "address", "name": "_user", "type": "address"}
+            ],
+            "name": "canInteract",
+            "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+            "stateMutability": "view",
+            "type": "function"
+        },
+        {
+            "anonymous": false,
+            "inputs": [
+                {"indexed": true, "internalType": "uint256", "name": "tokenId", "type": "uint256"},
+                {"indexed": true, "internalType": "address", "name": "creator", "type": "address"},
+                {"indexed": false, "internalType": "bytes32", "name": "dnaHash", "type": "bytes32"},
+                {"indexed": false, "internalType": "uint8", "name": "creativity", "type": "uint8"},
+                {"indexed": false, "internalType": "uint8", "name": "wisdom", "type": "uint8"},
+                {"indexed": false, "internalType": "uint8", "name": "humor", "type": "uint8"},
+                {"indexed": false, "internalType": "uint8", "name": "empathy", "type": "uint8"}
+            ],
+            "name": "MuseCreated",
+            "type": "event"
+        },
+        {
+            "anonymous": false,
+            "inputs": [
+                {"indexed": true, "internalType": "uint256", "name": "tokenId", "type": "uint256"},
+                {"indexed": true, "internalType": "bytes32", "name": "commitmentHash", "type": "bytes32"},
+                {"indexed": true, "internalType": "address", "name": "user", "type": "address"}
+            ],
+            "name": "InteractionCommitted",
+            "type": "event"
+        },
+        {
+            "anonymous": false,
+            "inputs": [
+                {"indexed": true, "internalType": "uint256", "name": "tokenId", "type": "uint256"},
+                {"indexed": true, "internalType": "bytes32", "name": "commitmentHash", "type": "bytes32"},
+                {"indexed": false, "internalType": "uint256", "name": "verificationTime", "type": "uint256"}
+            ],
+            "name": "InteractionVerified",
+            "type": "event"
+        }
+    ]"#
+);
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MuseData {
+    pub token_id: u64,
+    pub creativity: u8,
+    pub wisdom: u8,
+    pub humor: u8,
+    pub empathy: u8,
+    pub dna_hash: String,
+    pub birth_block: u64,
+    pub total_interactions: u64,
+    pub owner: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransactionInfo {
+    pub hash: String,
+    pub block_number: Option<u64>,
+    pub gas_used: Option<u64>,
+    pub status: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EventData {
+    pub event_type: String,
+    pub token_id: Option<u64>,
+    pub commitment_hash: Option<String>,
+    pub user_address: Option<String>,
+    pub block_number: u64,
+    pub transaction_hash: String,
+}
+
+type SignerClient = SignerMiddleware<Provider<Http>, LocalWallet>;
+
+pub struct BlockchainClient {
+    client: Arc<SignerClient>,
+    contract: MetaMuseContract<SignerClient>,
+    contract_address: Address,
+    // Cache for frequently accessed muse data
+    muse_cache: RwLock<HashMap<u64, MuseData>>,
+}
+
+impl BlockchainClient {
+    pub async fn new(config: &Config) -> Result<Self> {
+        // Create provider
+        let provider = Provider::<Http>::try_from(&config.ethereum_rpc_url)?;
+        
+        // Create wallet from private key
+        let wallet = LocalWallet::from_str(&config.signing_key)?
+            .with_chain_id(1u64); // Mainnet chain ID - would be configurable
+        
+        // Create signing client
+        let client = Arc::new(SignerMiddleware::new(provider, wallet));
+        
+        // Parse contract address
+        let contract_address = Address::from_str(&config.metamuse_contract_address)?;
+        
+        // Create contract instance
+        let contract = MetaMuseContract::new(contract_address, client.clone());
+        
+        Ok(Self {
+            client,
+            contract,
+            contract_address,
+            muse_cache: RwLock::new(HashMap::new()),
+        })
+    }
+    
+    /// Create a new Muse NFT on the blockchain
+    pub async fn create_muse(&self, traits: &MuseTraits) -> Result<(u64, TransactionInfo)> {
+        let call = self.contract.create_muse(
+            traits.creativity,
+            traits.wisdom,
+            traits.humor,
+            traits.empathy,
+        );
+        
+        // Estimate gas and set reasonable gas limit
+        let gas_estimate = call.estimate_gas().await?;
+        let gas_limit = gas_estimate * 120 / 100; // 20% buffer
+        
+        // Send transaction
+        let call_with_gas = call.gas(gas_limit);
+        let pending_tx = call_with_gas.send().await?;
+        let tx_hash = pending_tx.tx_hash();
+        
+        // Wait for confirmation
+        let receipt = pending_tx.await?.ok_or_else(|| {
+            anyhow::anyhow!("Transaction failed")
+        })?;
+        
+        // Extract token ID from MuseCreated event
+        let token_id = self.extract_token_id_from_receipt(&receipt)?;
+        
+        let tx_info = TransactionInfo {
+            hash: format!("{:?}", tx_hash),
+            block_number: receipt.block_number.map(|n| n.as_u64()),
+            gas_used: receipt.gas_used.map(|g| g.as_u64()),
+            status: receipt.status == Some(1.into()),
+        };
+        
+        // Clear cache to force refresh
+        self.muse_cache.write().await.remove(&token_id);
+        
+        Ok((token_id, tx_info))
+    }
+    
+    /// Get Muse data from blockchain (with caching)
+    pub async fn get_muse_data(&self, token_id: u64) -> Result<MuseData> {
+        // Check cache first
+        {
+            let cache = self.muse_cache.read().await;
+            if let Some(cached_data) = cache.get(&token_id) {
+                return Ok(cached_data.clone());
+            }
+        }
+        
+        // Fetch from blockchain
+        let muse_data = self.contract.get_muse_data(U256::from(token_id)).call().await?;
+        
+        let data = MuseData {
+            token_id,
+            creativity: muse_data.0,
+            wisdom: muse_data.1,
+            humor: muse_data.2,
+            empathy: muse_data.3,
+            dna_hash: format!("0x{}", hex::encode(muse_data.4)),
+            birth_block: muse_data.5.as_u64(),
+            total_interactions: muse_data.6.as_u64(),
+            owner: format!("{:?}", muse_data.7),
+        };
+        
+        // Cache the result
+        self.muse_cache.write().await.insert(token_id, data.clone());
+        
+        Ok(data)
+    }
+    
+    /// Check if a user can interact with a specific Muse
+    pub async fn can_interact(&self, token_id: u64, user_address: &str) -> Result<bool> {
+        let user_addr = Address::from_str(user_address)?;
+        let can_interact = self.contract
+            .can_interact(U256::from(token_id), user_addr)
+            .call()
+            .await?;
+        
+        Ok(can_interact)
+    }
+    
+    /// Commit an interaction to the blockchain
+    pub async fn commit_interaction(
+        &self,
+        token_id: u64,
+        commitment_hash: &[u8; 32],
+    ) -> Result<TransactionInfo> {
+        let commitment_hash_bytes = commitment_hash.clone();
+        
+        let call = self.contract.commit_interaction(
+            U256::from(token_id),
+            commitment_hash_bytes,
+        );
+        
+        // Estimate gas and send transaction
+        let gas_estimate = call.estimate_gas().await?;
+        let gas_limit = gas_estimate * 120 / 100;
+        
+        let call_with_gas = call.gas(gas_limit);
+        let pending_tx = call_with_gas.send().await?;
+        let tx_hash = pending_tx.tx_hash();
+        
+        let receipt = pending_tx.await?.ok_or_else(|| {
+            anyhow::anyhow!("Transaction failed")
+        })?;
+        
+        Ok(TransactionInfo {
+            hash: format!("{:?}", tx_hash),
+            block_number: receipt.block_number.map(|n| n.as_u64()),
+            gas_used: receipt.gas_used.map(|g| g.as_u64()),
+            status: receipt.status == Some(1.into()),
+        })
+    }
+    
+    /// Verify an interaction on the blockchain
+    pub async fn verify_interaction(
+        &self,
+        token_id: u64,
+        commitment_hash: &[u8; 32],
+        signature: &[u8],
+    ) -> Result<TransactionInfo> {
+        let commitment_hash_bytes = commitment_hash.clone();
+        let signature_bytes = Bytes::from(signature.to_vec());
+        
+        let call = self.contract.verify_interaction(
+            U256::from(token_id),
+            commitment_hash_bytes,
+            signature_bytes,
+        );
+        
+        let gas_estimate = call.estimate_gas().await?;
+        let gas_limit = gas_estimate * 120 / 100;
+        
+        let call_with_gas = call.gas(gas_limit);
+        let pending_tx = call_with_gas.send().await?;
+        let tx_hash = pending_tx.tx_hash();
+        
+        let receipt = pending_tx.await?.ok_or_else(|| {
+            anyhow::anyhow!("Transaction failed")
+        })?;
+        
+        // Invalidate cache for this muse since interaction count changed
+        self.muse_cache.write().await.remove(&token_id);
+        
+        Ok(TransactionInfo {
+            hash: format!("{:?}", tx_hash),
+            block_number: receipt.block_number.map(|n| n.as_u64()),
+            gas_used: receipt.gas_used.map(|g| g.as_u64()),
+            status: receipt.status == Some(1.into()),
+        })
+    }
+    
+    /// Listen for events from the MetaMuse contract (placeholder for future implementation)
+    pub async fn listen_for_events(&self) -> Result<()> {
+        // For now, this is a placeholder. In production, you'd implement:
+        // 1. WebSocket provider for real-time subscriptions
+        // 2. Proper event filtering and processing
+        // 3. Database storage for events
+        // 4. Error handling and reconnection logic
+        
+        println!("Event listening would be started here");
+        Ok(())
+    }
+    
+    /// Get recent events for a specific Muse
+    pub async fn get_muse_events(&self, token_id: u64, from_block: Option<u64>) -> Result<Vec<EventData>> {
+        let from_block = from_block.unwrap_or(0);
+        
+        let filter = Filter::new()
+            .address(self.contract_address)
+            .topic1(U256::from(token_id)) // Filter by token ID
+            .from_block(from_block);
+        
+        let logs = self.client.get_logs(&filter).await?;
+        
+        let mut events = Vec::new();
+        for log in logs {
+            if let Ok(event_data) = self.parse_log_to_event(&log).await {
+                events.push(event_data);
+            }
+        }
+        
+        Ok(events)
+    }
+    
+    /// Get current gas price for transaction estimation
+    pub async fn get_gas_price(&self) -> Result<U256> {
+        let gas_price = self.client.get_gas_price().await?;
+        Ok(gas_price)
+    }
+    
+    /// Get account balance
+    pub async fn get_balance(&self) -> Result<String> {
+        let address = self.client.default_sender().unwrap_or_default();
+        let balance = self.client.get_balance(address, None).await?;
+        Ok(format_ether(balance))
+    }
+    
+    // Helper methods
+    
+    fn extract_token_id_from_receipt(&self, receipt: &ethers::types::TransactionReceipt) -> Result<u64> {
+        for log in &receipt.logs {
+            // Look for MuseCreated event
+            if log.topics.len() >= 2 && log.address == self.contract_address {
+                // First topic is event signature, second is token ID
+                let token_id = U256::from(log.topics[1].0).as_u64();
+                return Ok(token_id);
+            }
+        }
+        Err(anyhow::anyhow!("Token ID not found in transaction receipt"))
+    }
+    
+    async fn process_event(log: Log) -> Result<()> {
+        // Process different event types
+        // This would typically update local database or trigger notifications
+        println!("Processing event: {:?}", log);
+        Ok(())
+    }
+    
+    async fn parse_log_to_event(&self, log: &Log) -> Result<EventData> {
+        // Parse log based on event signature
+        if log.topics.is_empty() {
+            return Err(anyhow::anyhow!("No topics in log"));
+        }
+        
+        let event_signature = log.topics[0];
+        
+        // Basic event parsing - in production would use proper ABI decoding
+        let event_data = EventData {
+            event_type: format!("{:?}", event_signature),
+            token_id: if log.topics.len() > 1 {
+                Some(U256::from(log.topics[1].0).as_u64())
+            } else {
+                None
+            },
+            commitment_hash: if log.topics.len() > 2 {
+                Some(format!("{:?}", log.topics[2]))
+            } else {
+                None
+            },
+            user_address: if log.topics.len() > 3 {
+                Some(format!("{:?}", log.topics[3]))
+            } else {
+                None
+            },
+            block_number: log.block_number.unwrap_or_default().as_u64(),
+            transaction_hash: format!("{:?}", log.transaction_hash.unwrap_or_default()),
+        };
+        
+        Ok(event_data)
+    }
+}
+
+// Utility functions for blockchain integration
+pub fn wei_to_ether(wei: U256) -> String {
+    format_ether(wei)
+}
+
+pub fn ether_to_wei(ether: &str) -> Result<U256> {
+    parse_ether(ether).map_err(|e| anyhow::anyhow!("Failed to parse ether: {}", e))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    fn create_test_config() -> Config {
+        Config {
+            openai_api_key: "test".to_string(),
+            signing_key: "0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318".to_string(),
+            ipfs_api_key: None,
+            ipfs_api_secret: None,
+            ipfs_gateway_url: "https://gateway.pinata.cloud/ipfs".to_string(),
+            ethereum_rpc_url: "http://localhost:8545".to_string(),
+            metamuse_contract_address: "0x742d35Cc6634C0532925a3b8D9C072a8c0c8E8C1".to_string(),
+            commitment_verifier_address: "0x742d35Cc6634C0532925a3b8D9C072a8c0c8E8C1".to_string(),
+            database_url: None,
+        }
+    }
+    
+    #[tokio::test]
+    async fn test_blockchain_client_creation() {
+        let config = create_test_config();
+        
+        // This test would require a local blockchain node
+        // In a real test environment, you'd use a test network like Hardhat
+        // For now, we'll just test the config parsing
+        assert_eq!(config.signing_key.len(), 66); // 0x + 64 hex chars
+        assert!(config.ethereum_rpc_url.starts_with("http"));
+    }
+    
+    #[test]
+    fn test_utility_functions() {
+        let wei = U256::from(1000000000000000000u64); // 1 ETH in wei
+        let ether_str = wei_to_ether(wei);
+        assert_eq!(ether_str, "1.000000000000000000");
+        
+        let parsed_wei = ether_to_wei("1.0").unwrap();
+        assert_eq!(parsed_wei, U256::from(1000000000000000000u64));
+    }
+}

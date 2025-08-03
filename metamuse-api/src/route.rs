@@ -108,6 +108,9 @@ pub fn plugin_routes() -> Router<Arc<AppState>> {
 pub fn verification_routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/api/v1/verify", post(verify_interaction))
+        .route("/api/v1/muses/:id/events", get(get_muse_events))
+        .route("/api/v1/blockchain/balance", get(get_account_balance))
+        .route("/api/v1/blockchain/gas-price", get(get_gas_price))
 }
 
 // Muse management handlers
@@ -128,26 +131,20 @@ async fn prepare_muse(
         empathy: request.empathy,
     };
 
-    // Generate unique muse ID (in production, this would be from blockchain)
-    let muse_id = format!("muse_{}", std::time::SystemTime::now()
+    // Pre-initialize the AI agents for this muse (using temporary ID for preparation)
+    let temp_muse_id = format!("temp_muse_{}", std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs());
     
-    // Generate DNA hash (simplified)
-    let dna_data = format!("{}{}{}{}{}", 
-        request.creativity, request.wisdom, request.humor, request.empathy, muse_id);
-    let dna_hash = format!("0x{:x}", md5::compute(dna_data.as_bytes()));
-
-    // Pre-initialize the AI agents for this muse
     let _ = state.orchestrator
-        .get_or_create_agents(&muse_id, &traits)
+        .get_or_create_agents(&temp_muse_id, &traits)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let response = MuseCreateResponse {
-        muse_id,
-        dna_hash,
+        muse_id: "pending_blockchain_creation".to_string(),
+        dna_hash: "pending_blockchain_creation".to_string(),
         traits,
         preparation_complete: true,
     };
@@ -157,24 +154,33 @@ async fn prepare_muse(
 
 async fn get_muse(
     Path(muse_id): Path<String>,
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    // In production, this would query the blockchain
-    // For now, return mock data if the muse exists in our orchestrator
+    // Parse muse ID as token ID
+    let token_id: u64 = muse_id.parse()
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
     
+    // Get muse data from blockchain
+    let muse_data = state.blockchain_client
+        .get_muse_data(token_id)
+        .await
+        .map_err(|e| {
+            println!("Failed to get muse data: {:?}", e);
+            StatusCode::NOT_FOUND
+        })?;
+
     let response = serde_json::json!({
-        "muse_id": muse_id,
-        "owner": "0x742d35Cc6634C0532925a3b8D9C072a8c0c8E8C1",
+        "muse_id": muse_data.token_id,
+        "owner": muse_data.owner,
         "traits": {
-            "creativity": 75,
-            "wisdom": 60,
-            "humor": 85,
-            "empathy": 70
+            "creativity": muse_data.creativity,
+            "wisdom": muse_data.wisdom,
+            "humor": muse_data.humor,
+            "empathy": muse_data.empathy
         },
-        "birth_block": 12345678,
-        "total_interactions": 42,
-        "last_interaction_time": 1640995200,
-        "dna_hash": "0x1234567890abcdef"
+        "birth_block": muse_data.birth_block,
+        "total_interactions": muse_data.total_interactions,
+        "dna_hash": muse_data.dna_hash
     });
 
     Ok((StatusCode::OK, Json(response)))
@@ -184,9 +190,49 @@ async fn create_muse(
     State(state): State<Arc<AppState>>,
     Json(request): Json<MuseCreateRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    // This would interact with the blockchain to actually create the NFT
-    // For now, just prepare the muse
-    prepare_muse(State(state), Json(request)).await
+    // Validate traits
+    if request.creativity > 100 || request.wisdom > 100 || 
+       request.humor > 100 || request.empathy > 100 {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let traits = MuseTraits {
+        creativity: request.creativity,
+        wisdom: request.wisdom,
+        humor: request.humor,
+        empathy: request.empathy,
+    };
+
+    // Create the NFT on the blockchain
+    let (token_id, _tx_info) = state.blockchain_client
+        .create_muse(&traits)
+        .await
+        .map_err(|e| {
+            println!("Blockchain error: {:?}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    // Get the muse data from blockchain (includes DNA hash)
+    let muse_data = state.blockchain_client
+        .get_muse_data(token_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Pre-initialize the AI agents for this muse
+    let muse_id = token_id.to_string();
+    let _ = state.orchestrator
+        .get_or_create_agents(&muse_id, &traits)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let response = MuseCreateResponse {
+        muse_id: muse_data.token_id.to_string(),
+        dna_hash: muse_data.dna_hash,
+        traits,
+        preparation_complete: true,
+    };
+
+    Ok((StatusCode::OK, Json(response)))
 }
 
 // Chat handlers
@@ -197,12 +243,20 @@ async fn handle_chat(
 ) -> Result<impl IntoResponse, StatusCode> {
     let start_time = std::time::Instant::now();
     
-    // Get muse traits (in production, from blockchain)
+    // Parse muse ID and get traits from blockchain
+    let token_id: u64 = muse_id.parse()
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    
+    let muse_data = state.blockchain_client
+        .get_muse_data(token_id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    
     let traits = MuseTraits {
-        creativity: 75,
-        wisdom: 60,
-        humor: 85,
-        empathy: 70,
+        creativity: muse_data.creativity,
+        wisdom: muse_data.wisdom,
+        humor: muse_data.humor,
+        empathy: muse_data.empathy,
     };
 
     // Retrieve context if requested
@@ -237,12 +291,34 @@ async fn handle_chat(
         .await
         .is_ok();
 
-    // Create commitment hash (simplified - in production would be proper cryptographic hash)
-    let commitment_data = format!("{}{}{}", muse_id, request.message, ai_response);
-    let commitment_hash = format!("0x{:x}", md5::compute(commitment_data.as_bytes()));
+    // Create verifiable interaction for cryptographic verification
+    let verifiable_interaction = state.verification_system
+        .create_interaction_from_data(
+            token_id,
+            hex::decode(&muse_data.dna_hash[2..])
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+                .try_into()
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+            &interaction,
+        );
 
-    // Generate signature (mock - in production would use proper cryptographic signing)
-    let signature = format!("0x{}", "a".repeat(130)); // Mock 65-byte signature as hex
+    // Create commitment and signature
+    let commitment = state.verification_system
+        .create_commitment(&verifiable_interaction)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let commitment_hash = hex::encode(commitment.commitment_hash);
+    let signature = hex::encode(&commitment.signature);
+
+    // Commit interaction to blockchain (optional - for full transparency)
+    let _commit_tx = state.blockchain_client
+        .commit_interaction(token_id, &commitment.commitment_hash)
+        .await
+        .map_err(|e| {
+            println!("Failed to commit interaction to blockchain: {:?}", e);
+            // Don't fail the request if blockchain commit fails
+        });
 
     let response = ChatResponse {
         response: ai_response,
@@ -370,20 +446,110 @@ async fn execute_plugin(
 
 // Verification handlers
 async fn verify_interaction(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     Json(request): Json<VerificationRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    // In production, this would:
-    // 1. Validate the commitment hash
-    // 2. Create proper cryptographic signature
-    // 3. Submit to blockchain for verification
+    // Parse commitment hash
+    let commitment_hash_bytes = hex::decode(&request.commitment_hash)
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
     
-    // Mock response for now
-    let response = VerificationResponse {
-        success: true,
-        signature: Some(format!("0x{}", "b".repeat(130))),
-        verification_hash: Some(request.commitment_hash),
-    };
+    if commitment_hash_bytes.len() != 32 {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    
+    let mut commitment_hash = [0u8; 32];
+    commitment_hash.copy_from_slice(&commitment_hash_bytes);
+    
+    // Parse muse ID
+    let token_id: u64 = request.muse_id.parse()
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    
+    // Get muse data from blockchain (verify muse exists)
+    let _muse_data = state.blockchain_client
+        .get_muse_data(token_id)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    
+    // For now, create a mock signature (in production, this would come from the interaction data)
+    let mock_signature = [0u8; 64]; // Would be actual signature from interaction
+    
+    // Verify interaction on blockchain
+    let verification_result = state.blockchain_client
+        .verify_interaction(token_id, &commitment_hash, &mock_signature)
+        .await;
+    
+    match verification_result {
+        Ok(tx_info) => {
+            let response = VerificationResponse {
+                success: tx_info.status,
+                signature: Some(hex::encode(mock_signature)),
+                verification_hash: Some(tx_info.hash),
+            };
+            Ok((StatusCode::OK, Json(response)))
+        },
+        Err(e) => {
+            println!("Verification failed: {:?}", e);
+            let response = VerificationResponse {
+                success: false,
+                signature: None,
+                verification_hash: None,
+            };
+            Ok((StatusCode::OK, Json(response)))
+        }
+    }
+}
 
+// Blockchain utility handlers
+async fn get_muse_events(
+    Path(muse_id): Path<String>,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let token_id: u64 = muse_id.parse()
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    
+    let events = state.blockchain_client
+        .get_muse_events(token_id, None)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    
+    Ok((StatusCode::OK, Json(events)))
+}
+
+async fn get_account_balance(
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let balance = state.blockchain_client
+        .get_balance()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    
+    let response = serde_json::json!({
+        "balance_eth": balance,
+        "timestamp": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    });
+    
+    Ok((StatusCode::OK, Json(response)))
+}
+
+async fn get_gas_price(
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let gas_price = state.blockchain_client
+        .get_gas_price()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    
+    let response = serde_json::json!({
+        "gas_price_wei": gas_price.to_string(),
+        "gas_price_gwei": format!("{:.2}", gas_price.as_u64() as f64 / 1_000_000_000.0),
+        "timestamp": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    });
+    
     Ok((StatusCode::OK, Json(response)))
 }
