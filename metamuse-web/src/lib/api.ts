@@ -228,9 +228,9 @@ export const api = {
       }>('/api/v1/verification/batch', data),
   },
 
-  // Memory management
+  // Memory management (Enhanced)
   memory: {
-    // Get muse memory entries
+    // Basic memory operations (legacy compatibility)
     getEntries: (museId: string, params?: { limit?: number; importance_threshold?: number }) =>
       apiClient.get<{
         memories: Array<{
@@ -244,7 +244,6 @@ export const api = {
         total: number;
       }>(`/api/v1/muses/${museId}/memory${params ? '?' + new URLSearchParams(Object.entries(params).map(([k, v]) => [k, v?.toString() || ''])).toString() : ''}`),
 
-    // Add memory entry
     addEntry: (museId: string, data: {
       content: string;
       importance_score: number;
@@ -255,6 +254,131 @@ export const api = {
         ipfs_hash: string;
         status: 'stored';
       }>(`/api/v1/muses/${museId}/memory`, data),
+
+    // Enhanced memory operations
+    getEnhanced: (museId: string, params?: {
+      limit?: number;
+      category?: string;
+      tags?: string;
+      min_importance?: number;
+      search?: string;
+      search_type?: 'semantic' | 'keyword';
+    }) => {
+      const query = new URLSearchParams();
+      if (params?.limit) query.set('limit', params.limit.toString());
+      if (params?.category) query.set('category', params.category);
+      if (params?.tags) query.set('tags', params.tags);
+      if (params?.min_importance) query.set('min_importance', params.min_importance.toString());
+      if (params?.search) query.set('search', params.search);
+      if (params?.search_type) query.set('search_type', params.search_type);
+      
+      return apiClient.get<{
+        memories: Array<{
+          id: string;
+          content: string;
+          ai_response: string;
+          importance: number;
+          timestamp: number;
+          category: string;
+          tags: string[];
+          emotional_tone?: {
+            sentiment: number;
+            emotions: Array<[string, number]>;
+            energy_level: number;
+          };
+          ipfs_hash?: string;
+          access_count: number;
+          retention_priority: string;
+        }>;
+        stats: {
+          total_memories: number;
+          average_importance: number;
+          category_breakdown: Record<string, number>;
+          top_tags: Record<string, number>;
+          emotional_distribution: Record<string, number>;
+        };
+        has_more: boolean;
+      }>(`/api/v1/muses/${museId}/memories/enhanced?${query.toString()}`);
+    },
+
+    // Semantic search
+    semanticSearch: (museId: string, query: string, limit?: number) =>
+      apiClient.get<Array<{
+        id: string;
+        content: string;
+        ai_response: string;
+        importance: number;
+        timestamp: number;
+        category: string;
+        tags: string[];
+        emotional_tone?: any;
+        ipfs_hash?: string;
+        access_count: number;
+        retention_priority: string;
+      }>>(`/api/v1/muses/${museId}/memories/semantic?search=${encodeURIComponent(query)}${limit ? `&limit=${limit}` : ''}`),
+
+    // Category-based retrieval
+    getByCategory: (museId: string, category: string, limit?: number) =>
+      apiClient.get<Array<any>>(`/api/v1/muses/${museId}/memories/category/${category}${limit ? `?limit=${limit}` : ''}`),
+
+    // Tag-based retrieval
+    getByTag: (museId: string, tag: string, limit?: number) =>
+      apiClient.get<Array<any>>(`/api/v1/muses/${museId}/memories/tagged/${tag}${limit ? `?limit=${limit}` : ''}`),
+
+    // Important memories
+    getImportant: (museId: string, minImportance?: number, limit?: number) => {
+      const params = new URLSearchParams();
+      if (minImportance) params.set('min_importance', minImportance.toString());
+      if (limit) params.set('limit', limit.toString());
+      return apiClient.get<Array<any>>(`/api/v1/muses/${museId}/memories/important?${params.toString()}`);
+    },
+
+    // Available tags
+    getTags: (museId: string) =>
+      apiClient.get<{ tags: string[] }>(`/api/v1/muses/${museId}/memories/tags`),
+
+    // Enhanced statistics
+    getStats: (museId: string) =>
+      apiClient.get<{
+        total_memories: number;
+        average_importance: number;
+        category_breakdown: Record<string, number>;
+        top_tags: Record<string, number>;
+        emotional_distribution: Record<string, number>;
+      }>(`/api/v1/muses/${museId}/memories/stats`),
+
+    // Memory timeline
+    getTimeline: (museId: string, limit?: number) =>
+      apiClient.get<{
+        timeline: Array<{
+          date: string;
+          memories: Array<any>;
+          memory_count: number;
+          avg_importance: number;
+          dominant_emotions: string[];
+        }>;
+        total_days: number;
+        date_range: {
+          start: string;
+          end: string;
+        };
+      }>(`/api/v1/muses/${museId}/memories/timeline${limit ? `?limit=${limit}` : ''}`),
+
+    // Advanced search
+    search: (museId: string, params: {
+      search?: string;
+      search_type?: 'semantic' | 'keyword';
+      category?: string;
+      tags?: string;
+      min_importance?: number;
+      limit?: number;
+    }) => {
+      const query = new URLSearchParams();
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) query.set(key, value.toString());
+      });
+      return apiClient.get<Array<any>>(`/api/v1/muses/${museId}/memories/search?${query.toString()}`);
+    },
   },
 
   // Plugin management

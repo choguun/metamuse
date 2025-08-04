@@ -478,6 +478,15 @@ async fn handle_chat(
         ai_response: ai_response.clone(),
         personality_traits: traits.clone(),
         context_used: context,
+        
+        // Enhanced interaction metadata
+        session_id: None, // TODO: Add session tracking
+        conversation_turn: 1, // TODO: Track conversation turns
+        response_time_ms: inference_time,
+        model_used: "local_ai".to_string(), // TODO: Track actual model used
+        prompt_tokens: None, // TODO: Count tokens
+        response_tokens: None, // TODO: Count tokens
+        user_satisfaction: None, // TODO: Add satisfaction tracking
     };
 
     // Store memory

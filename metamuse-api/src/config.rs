@@ -22,9 +22,10 @@ pub struct Config {
     pub muse_plugins_contract_address: String,
     pub block_explorer_url: String,
     
-    // Storage Configuration
+    // Storage Configuration (Pinata IPFS)
     pub ipfs_api_key: Option<String>,
     pub ipfs_api_secret: Option<String>,
+    pub ipfs_jwt_token: Option<String>,
     pub ipfs_gateway_url: String,
     pub database_url: Option<String>,
 }
@@ -66,9 +67,10 @@ impl Config {
             block_explorer_url: env::var("BLOCK_EXPLORER_URL")
                 .unwrap_or_else(|_| "https://hyperion-testnet-explorer.metisdevops.link".to_string()),
                 
-            // Storage Configuration
+            // Storage Configuration (Pinata IPFS)
             ipfs_api_key: env::var("IPFS_API_KEY").ok(),
             ipfs_api_secret: env::var("IPFS_API_SECRET").ok(),
+            ipfs_jwt_token: env::var("IPFS_JWT_TOKEN").ok(),
             ipfs_gateway_url: env::var("IPFS_GATEWAY_URL")
                 .unwrap_or_else(|_| "https://gateway.pinata.cloud/ipfs".to_string()),
             database_url: env::var("DATABASE_URL").ok(),

@@ -11,6 +11,7 @@ mod blockchain_client;
 mod muse_orchestrator;
 mod route;
 mod persist_memory;
+mod memory_routes_enhanced;
 mod plugin_system;
 mod tools;
 mod verification;
@@ -82,6 +83,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .merge(route::muse_routes())
         .merge(route::chat_routes())
         .merge(route::memory_routes())
+        .merge(memory_routes_enhanced::enhanced_memory_routes())
         .merge(route::plugin_routes())
         .merge(route::verification_routes())
         .with_state(app_state)

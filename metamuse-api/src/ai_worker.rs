@@ -4,6 +4,43 @@ use std::io::{self, BufRead, BufReader, Write};
 use alith::inference::LlamaEngine;
 use alith::core::chat::{Request, Completion, ResponseContent};
 
+/// Clean up repetitive text patterns that can occur in AI generation
+fn clean_repetitive_text(text: &str) -> String {
+    let mut lines: Vec<&str> = text.lines().collect();
+    
+    // Remove consecutive duplicate lines
+    let mut i = 0;
+    while i < lines.len().saturating_sub(1) {
+        if lines[i] == lines[i + 1] {
+            lines.remove(i + 1);
+        } else {
+            i += 1;
+        }
+    }
+    
+    let cleaned = lines.join("\n");
+    
+    // Check for repetitive phrases (3+ word patterns repeated)
+    let words: Vec<&str> = cleaned.split_whitespace().collect();
+    if words.len() > 10 {
+        // Look for patterns of 3-8 words that repeat
+        for pattern_len in 3..=8 {
+            for start in 0..words.len().saturating_sub(pattern_len * 2) {
+                let pattern = &words[start..start + pattern_len];
+                let next_pattern = &words[start + pattern_len..start + pattern_len * 2];
+                
+                if pattern == next_pattern {
+                    // Found repetition, truncate at the start of the repetition
+                    let truncated_words = &words[0..start + pattern_len];
+                    return truncated_words.join(" ") + "...";
+                }
+            }
+        }
+    }
+    
+    cleaned
+}
+
 /// Request structure for AI inference worker process
 #[derive(Debug, Deserialize)]
 pub struct AIWorkerRequest {
@@ -107,7 +144,12 @@ impl AIWorker {
             Ok(response) => {
                 let generated_text = response.content();
                 eprintln!("🎉 AI inference successful! Generated {} characters", generated_text.len());
-                Ok(generated_text)
+                
+                // Clean repetitive patterns to prevent infinite loops
+                let cleaned_text = clean_repetitive_text(&generated_text);
+                eprintln!("🧹 Cleaned text from {} to {} characters", generated_text.len(), cleaned_text.len());
+                
+                Ok(cleaned_text)
             }
             Err(e) => {
                 eprintln!("❌ AI inference failed in worker process: {}", e);

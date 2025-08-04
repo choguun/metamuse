@@ -10,6 +10,43 @@ use tokio::io::{AsyncWriteExt, AsyncBufReadExt, BufReader};
 
 // Note: llama_cpp_2 imports removed - using alith's interface instead
 
+/// Clean up repetitive text patterns that can occur in AI generation
+fn clean_repetitive_text(text: &str) -> String {
+    let mut lines: Vec<&str> = text.lines().collect();
+    
+    // Remove consecutive duplicate lines
+    let mut i = 0;
+    while i < lines.len().saturating_sub(1) {
+        if lines[i] == lines[i + 1] {
+            lines.remove(i + 1);
+        } else {
+            i += 1;
+        }
+    }
+    
+    let cleaned = lines.join("\n");
+    
+    // Check for repetitive phrases (3+ word patterns repeated)
+    let words: Vec<&str> = cleaned.split_whitespace().collect();
+    if words.len() > 10 {
+        // Look for patterns of 3-8 words that repeat
+        for pattern_len in 3..=8 {
+            for start in 0..words.len().saturating_sub(pattern_len * 2) {
+                let pattern = &words[start..start + pattern_len];
+                let next_pattern = &words[start + pattern_len..start + pattern_len * 2];
+                
+                if pattern == next_pattern {
+                    // Found repetition, truncate at the start of the repetition
+                    let truncated_words = &words[0..start + pattern_len];
+                    return truncated_words.join(" ") + "...";
+                }
+            }
+        }
+    }
+    
+    cleaned
+}
+
 /// Request structure for AI inference worker process
 #[derive(Debug, Serialize)]
 pub struct AIWorkerRequest {
@@ -167,7 +204,10 @@ impl LlamaEngineWrapper {
                         
                         // Test with a minimal prompt to see if KV cache is cleared
                         use alith::core::chat::{Request, Completion, ResponseContent};
-                        let test_request = Request::new("Test".to_string(), String::new());
+                        let mut test_request = Request::new("Test".to_string(), String::new());
+                        test_request.temperature = Some(0.1);
+                        test_request.max_tokens = Some(10);
+                        // Configure inference parameters (no stop/repeat_penalty available in this Request type)
                         
                         match test_engine.completion(test_request).await {
                             Ok(_) => {
@@ -503,6 +543,9 @@ impl LlamaEngineWrapper {
         request.temperature = Some(temperature);
         request.max_tokens = Some(max_tokens);
         
+        // CRITICAL: Use smaller max_tokens to prevent runaway generation
+        request.max_tokens = Some(std::cmp::min(max_tokens, 150)); // Cap at 150 tokens
+        
         println!("📤 Request #{} - Sending to LlamaEngine...", request_num);
         
         match engine.completion(request).await {
@@ -510,7 +553,12 @@ impl LlamaEngineWrapper {
                 let generated_text = response.content();
                 println!("✅ Real AI inference successful! Generated {} characters", generated_text.len());
                 println!("📝 Response preview: {}", &generated_text[..std::cmp::min(100, generated_text.len())]);
-                Ok(generated_text)
+                
+                // Clean repetitive patterns to prevent infinite loops
+                let cleaned_text = clean_repetitive_text(&generated_text);
+                println!("🧹 Cleaned text from {} to {} characters", generated_text.len(), cleaned_text.len());
+                
+                Ok(cleaned_text)
             }
             Err(e) => {
                 println!("❌ AI inference failed: {}", e);
@@ -740,17 +788,24 @@ impl LlamaEngineWrapper {
                 request.temperature = Some(temperature);
                 request.max_tokens = Some(max_tokens);
                 
+                // CRITICAL: Use smaller max_tokens to prevent runaway generation
+                request.max_tokens = Some(std::cmp::min(max_tokens, 150)); // Cap at 150 tokens
+                
                 match fresh_engine.completion(request).await {
                     Ok(response) => {
                         let generated_text = response.content();
                         println!("✅ Request #{} - Fresh engine AI inference successful! Generated {} characters", request_num, generated_text.len());
+                        
+                        // Clean repetitive patterns to prevent infinite loops
+                        let cleaned_text = clean_repetitive_text(&generated_text);
+                        println!("🧹 Request #{} - Cleaned text from {} to {} characters", request_num, generated_text.len(), cleaned_text.len());
                         
                         // Store the fresh engine for potential future use (though it will likely have the same KV cache issues)
                         let global_state = GLOBAL_STATE.get().unwrap();
                         let mut fresh_guard = global_state.engines[0].lock().await;
                         *fresh_guard = Some(fresh_engine);
                         
-                        Ok(generated_text)
+                        Ok(cleaned_text)
                     }
                     Err(e) => {
                         println!("❌ Request #{} - Fresh engine also failed: {}", request_num, e);

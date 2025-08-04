@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { type MuseData } from '@/types';
 import { METAMUSE_ABI, CONTRACTS, PERSONALITY_COLORS, API_BASE_URL } from '@/constants';
+import useEnhancedMemory from '@/hook/useEnhancedMemory';
 
 interface ChatMessage {
   id: string;
@@ -31,6 +32,7 @@ interface InteractionSession {
 
 export default function ChatPage() {
   const params = useParams();
+  const router = useRouter();
   const museId = params.museId as string;
   const { isConnected, address } = useAccount();
   
@@ -41,9 +43,16 @@ export default function ChatPage() {
   const [inputValue, setInputValue] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [showVerificationDetails, setShowVerificationDetails] = useState(false);
+  const [showMemorySidebar, setShowMemorySidebar] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  
+  // Enhanced memory integration
+  const { memories, stats, isLoading: memoryLoading } = useEnhancedMemory(
+    museId, 
+    { autoLoad: isConnected, limit: 10 }
+  );
   
   const { writeContract, data: hash, isPending } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
@@ -139,6 +148,15 @@ export default function ChatPage() {
     try {
       setIsTyping(true);
       
+      console.log('🚀 Sending message to API:', {
+        url: `${API_BASE_URL}/api/v1/muses/${museId}/chat/message`,
+        payload: {
+          session_id: session.session_id,
+          message: messageContent,
+          user_address: address,
+        }
+      });
+      
       // Send message to backend
       const response = await fetch(`${API_BASE_URL}/api/v1/muses/${museId}/chat/message`, {
         method: 'POST',
@@ -150,8 +168,16 @@ export default function ChatPage() {
         }),
       });
       
-      if (!response.ok) throw new Error('Failed to send message');
+      console.log('📡 API Response status:', response.status, response.statusText);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ API Error:', errorText);
+        throw new Error(`Failed to send message: ${response.status} ${errorText}`);
+      }
+      
       const result = await response.json();
+      console.log('✅ API Response data:', result);
       
       // Add muse response
       const museResponse: ChatMessage = {
@@ -163,6 +189,8 @@ export default function ChatPage() {
         commitment_hash: result.commitment_hash,
       };
       
+      console.log('💬 Adding muse response to chat:', museResponse);
+      
       setSession(prev => prev ? {
         ...prev,
         messages: [...prev.messages.slice(0, -1), 
@@ -172,7 +200,7 @@ export default function ChatPage() {
       } : null);
       
     } catch (error) {
-      console.error('Failed to send message:', error);
+      console.error('❌ Failed to send message:', error);
       
       // Generate mock response for demonstration
       const mockResponse = generateMockResponse(messageContent);
@@ -351,6 +379,22 @@ export default function ChatPage() {
             </div>
             
             <div className="flex items-center space-x-4">
+              {/* Memory Controls */}
+              <button
+                onClick={() => setShowMemorySidebar(!showMemorySidebar)}
+                className="flex items-center space-x-2 text-sm text-gray-400 hover:text-white transition-colors"
+              >
+                <span>🧠</span>
+                <span>{stats ? stats.total_memories : 0} memories</span>
+              </button>
+              
+              <button
+                onClick={() => router.push(`/chat/${museId}/memory`)}
+                className="text-sm text-gray-400 hover:text-white transition-colors"
+              >
+                Explore Memories
+              </button>
+              
               <button
                 onClick={() => setShowVerificationDetails(!showVerificationDetails)}
                 className="text-sm text-gray-400 hover:text-white transition-colors"
@@ -372,10 +416,12 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-hidden">
-        <div className="h-full overflow-y-auto">
-          <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+      {/* Main Content Area */}
+      <div className="flex-1 overflow-hidden flex">
+        {/* Chat Messages */}
+        <div className={`flex-1 overflow-hidden ${showMemorySidebar ? 'mr-80' : ''} transition-all duration-300`}>
+          <div className="h-full overflow-y-auto">
+            <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
             <AnimatePresence>
               {session.messages.map((message) => (
                 <motion.div
@@ -429,8 +475,135 @@ export default function ChatPage() {
             )}
             
             <div ref={messagesEndRef} />
+            </div>
           </div>
         </div>
+        
+        {/* Memory Sidebar */}
+        <AnimatePresence>
+          {showMemorySidebar && (
+            <motion.div
+              initial={{ x: 320, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: 320, opacity: 0 }}
+              transition={{ duration: 0.3 }}
+              className="w-80 bg-gray-900/95 backdrop-blur-sm border-l border-gray-700 absolute right-0 top-0 h-full overflow-y-auto"
+            >
+              <div className="p-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-white">Recent Memories</h3>
+                  <button
+                    onClick={() => setShowMemorySidebar(false)}
+                    className="text-gray-400 hover:text-white transition-colors"
+                  >
+                    ✕
+                  </button>
+                </div>
+                
+                {memoryLoading ? (
+                  <div className="text-center py-8">
+                    <div className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                    <p className="text-gray-400 text-sm">Loading memories...</p>
+                  </div>
+                ) : memories && memories.length > 0 ? (
+                  <div className="space-y-3">
+                    {memories.slice(0, 8).map((memory) => (
+                      <div
+                        key={memory.id}
+                        className="bg-gray-800 rounded-lg p-3 hover:bg-gray-750 transition-colors cursor-pointer"
+                        onClick={() => router.push(`/chat/${museId}/memory`)}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs text-purple-400 font-medium capitalize">
+                            {memory.category}
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            {new Date(memory.timestamp * 1000).toLocaleString()}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-300 line-clamp-2 mb-2">
+                          {memory.content.substring(0, 80)}...
+                        </p>
+                        <div className="flex items-center justify-between">
+                          <div className="flex flex-wrap gap-1">
+                            {memory.tags.slice(0, 2).map((tag) => (
+                              <span
+                                key={tag}
+                                className="text-xs bg-purple-500/20 text-purple-300 px-2 py-1 rounded"
+                              >
+                                #{tag}
+                              </span>
+                            ))}
+                          </div>
+                          <div className="flex items-center space-x-1">
+                            <span className="text-xs text-gray-500">
+                              {(memory.importance * 10).toFixed(1)}/10
+                            </span>
+                            <div 
+                              className="w-8 h-1 bg-gray-700 rounded-full overflow-hidden"
+                            >
+                              <div 
+                                className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full"
+                                style={{ width: `${memory.importance * 100}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    
+                    <button
+                      onClick={() => router.push(`/chat/${museId}/memory`)}
+                      className="w-full mt-4 bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700 text-white py-2 px-4 rounded-lg text-sm font-medium transition-all duration-200"
+                    >
+                      View All Memories
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <div className="text-4xl mb-2">🧠</div>
+                    <p className="text-gray-400 text-sm mb-3">No memories yet</p>
+                    <p className="text-gray-500 text-xs">
+                      Start chatting to create memories with your AI companion
+                    </p>
+                  </div>
+                )}
+                
+                {stats && (
+                  <div className="mt-6 pt-4 border-t border-gray-700">
+                    <h4 className="text-sm font-medium text-white mb-3">Memory Stats</h4>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">Total Memories</span>
+                        <span className="text-white">{stats.total_memories}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">Avg Importance</span>
+                        <span className="text-white">{stats.average_importance.toFixed(1)}</span>
+                      </div>
+                      {Object.entries(stats.category_breakdown).length > 0 && (
+                        <div className="mt-3">
+                          <span className="text-gray-400 text-xs">Top Categories</span>
+                          <div className="mt-1 space-y-1">
+                            {Object.entries(stats.category_breakdown)
+                              .sort(([,a], [,b]) => b - a)
+                              .slice(0, 3)
+                              .map(([category, count]) => (
+                                <div key={category} className="flex justify-between text-xs">
+                                  <span className="text-gray-500 capitalize">{category}</span>
+                                  <span className="text-gray-400">{count}</span>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Input */}
