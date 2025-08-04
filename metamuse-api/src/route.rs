@@ -892,36 +892,97 @@ async fn explore_muses(
 
 async fn initialize_chat_session(
     Path(muse_id): Path<String>,
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     Json(request): Json<ChatSessionRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    // Generate a session ID
-    let session_id = format!("session_{}_{}", muse_id, 
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs()
-    );
+    println!("🌐 Initializing chat session for user {} + muse {}", request.user_address, muse_id);
 
-    // Create an initial greeting message
-    let greeting_message = ChatMessage {
-        id: "1".to_string(),
-        content: format!("Hello! I'm Muse #{}. I'm excited to chat with you! What would you like to talk about?", muse_id),
-        role: "muse".to_string(),
-        timestamp: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs()
-            .to_string(),
-        verification_status: Some("verified".to_string()),
-        commitment_hash: Some("0x123456789abcdef".to_string()),
+    // Get existing session or create new one for this user+muse combination
+    let ipfs_session = match state.ipfs_chat_history
+        .get_or_create_session(muse_id.clone(), request.user_address.clone())
+        .await
+    {
+        Ok(session) => session,
+        Err(e) => {
+            println!("❌ Failed to get or create IPFS chat session: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    // Convert IPFS messages to API format
+    let api_messages: Vec<ChatMessage> = ipfs_session.messages
+        .iter()
+        .map(|msg| ChatMessage {
+            id: msg.id.clone(),
+            content: msg.content.clone(),
+            role: msg.role.clone(),
+            timestamp: msg.timestamp.to_string(),
+            verification_status: Some("verified".to_string()),
+            commitment_hash: Some("0x123456789abcdef".to_string()),
+        })
+        .collect();
+
+    // If no existing messages, add greeting
+    let messages = if api_messages.is_empty() {
+        let greeting_id = format!("greeting_{}", 
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        );
+
+        // Add greeting to IPFS session
+        match state.ipfs_chat_history
+            .add_message(
+                &ipfs_session.session_id,
+                "assistant".to_string(),
+                format!("Hello! I'm Muse #{}. I'm excited to chat with you! What would you like to talk about?", muse_id),
+                greeting_id.clone(),
+            )
+            .await
+        {
+            Ok(_) => {
+                println!("✅ Added greeting message to IPFS session");
+                vec![ChatMessage {
+                    id: greeting_id,
+                    content: format!("Hello! I'm Muse #{}. I'm excited to chat with you! What would you like to talk about?", muse_id),
+                    role: "assistant".to_string(),
+                    timestamp: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs()
+                        .to_string(),
+                    verification_status: Some("verified".to_string()),
+                    commitment_hash: Some("0x123456789abcdef".to_string()),
+                }]
+            }
+            Err(e) => {
+                println!("⚠️ Failed to add greeting to IPFS: {}, using local greeting", e);
+                vec![ChatMessage {
+                    id: greeting_id,
+                    content: format!("Hello! I'm Muse #{}. I'm excited to chat with you! What would you like to talk about?", muse_id),
+                    role: "assistant".to_string(),
+                    timestamp: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs()
+                        .to_string(),
+                    verification_status: Some("verified".to_string()),
+                    commitment_hash: Some("0x123456789abcdef".to_string()),
+                }]
+            }
+        }
+    } else {
+        api_messages
     };
 
     let response = ChatSessionResponse {
-        session_id,
+        session_id: ipfs_session.session_id.clone(),
         muse_id,
-        messages: vec![greeting_message],
+        messages,
     };
+
+    println!("🎯 IPFS chat session initialized with {} messages", response.messages.len());
 
     Ok((StatusCode::OK, Json(response)))
 }
@@ -931,9 +992,50 @@ async fn send_chat_message(
     State(state): State<Arc<AppState>>,
     Json(request): Json<ChatMessageRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
+    println!("🌐 Processing IPFS chat message for muse: {} in session: {}", muse_id, request.session_id);
+    
     // Parse muse ID to get personality traits
     let token_id: u64 = muse_id.parse()
         .map_err(|_| StatusCode::BAD_REQUEST)?;
+    
+    // Step 1: Add user message to IPFS first
+    let user_message_id = format!("user_msg_{}", 
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    );
+
+    match state.ipfs_chat_history
+        .add_message(
+            &request.session_id,
+            "user".to_string(),
+            request.message.clone(),
+            user_message_id.clone(),
+        )
+        .await
+    {
+        Ok(_) => println!("✅ User message added to IPFS"),
+        Err(e) => {
+            println!("❌ Failed to add user message to IPFS: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    // Step 2: Retrieve chat history from IPFS for AI context
+    let chat_history = match state.ipfs_chat_history
+        .get_alith_history(&request.session_id)
+        .await
+    {
+        Ok(history) => {
+            println!("📚 Retrieved {} history messages from IPFS", history.len());
+            history
+        }
+        Err(e) => {
+            println!("⚠️ Failed to retrieve chat history from IPFS: {}, using empty history", e);
+            Vec::new()
+        }
+    };
     
     // Get muse personality traits from our mock data
     let muse_traits = match token_id {
@@ -943,24 +1045,45 @@ async fn send_chat_message(
         _ => MuseTraits { creativity: 70, wisdom: 70, humor: 70, empathy: 70 },
     };
     
-    // Get conversation context from memory system
-    let context = state.memory_system
-        .get_recent_memories(&muse_id, 5)
-        .await
-        .unwrap_or_default();
-    
-    // Generate AI response using the orchestrator
+    // Step 3: Generate AI response using IPFS chat history
     let ai_response = match state.orchestrator
-        .generate_response(&muse_id, &muse_traits, &request.message, Some(context.clone()), state.llama_engine.clone())
+        .generate_response_with_history(&muse_id, &muse_traits, &request.message, chat_history, state.llama_engine.clone())
         .await
     {
-        Ok(response) => response,
+        Ok(response) => {
+            println!("🎯 AI response generated with IPFS history context");
+            response
+        }
         Err(e) => {
-            println!("AI generation failed: {}, falling back to mock response", e);
+            println!("❌ AI generation with history failed: {}, falling back to mock response", e);
             // Fallback to enhanced mock response if AI fails
             generate_personality_response(&request.message, muse_traits.creativity, muse_traits.wisdom, muse_traits.humor, muse_traits.empathy)
         }
     };
+
+    // Step 4: Add AI response to IPFS
+    let ai_message_id = format!("ai_msg_{}", 
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    );
+
+    match state.ipfs_chat_history
+        .add_message(
+            &request.session_id,
+            "assistant".to_string(),
+            ai_response.clone(),
+            ai_message_id.clone(),
+        )
+        .await
+    {
+        Ok(_) => println!("✅ AI response added to IPFS"),
+        Err(e) => {
+            println!("⚠️ Failed to add AI response to IPFS: {}, continuing with response", e);
+            // Continue anyway since we have the response
+        }
+    }
 
     let interaction_id = format!("interaction_{}_{}", muse_id, 
         std::time::SystemTime::now()

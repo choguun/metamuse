@@ -17,6 +17,7 @@ mod tools;
 mod verification;
 mod llama_engine_wrapper;
 mod ai_worker;
+mod ipfs_chat_history;
 
 use crate::config::Config;
 use crate::blockchain_client::BlockchainClient;
@@ -24,6 +25,7 @@ use crate::muse_orchestrator::MuseOrchestrator;
 use crate::persist_memory::MemorySystem;
 use crate::plugin_system::PluginSystem;
 use crate::verification::VerificationSystem;
+use crate::ipfs_chat_history::IPFSChatHistoryManager;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -34,6 +36,7 @@ pub struct AppState {
     pub plugin_system: Arc<PluginSystem>,
     pub verification_system: Arc<VerificationSystem>,
     pub llama_engine: Option<Arc<Mutex<LlamaEngineWrapper>>>, // Shared LlamaEngine instance
+    pub ipfs_chat_history: Arc<IPFSChatHistoryManager>, // IPFS-powered chat history
 }
 
 #[tokio::main]
@@ -66,6 +69,9 @@ async fn main() -> Result<(), anyhow::Error> {
     let memory_system = Arc::new(MemorySystem::new(&config).await?);
     let plugin_system = Arc::new(PluginSystem::new().await?);
     let verification_system = Arc::new(VerificationSystem::new(&config)?);
+    let ipfs_chat_history = Arc::new(IPFSChatHistoryManager::new(&config).await?);
+    
+    println!("🌐 IPFS Chat History Manager initialized - Web3-native conversation persistence");
     
     // Create app state
     let app_state = Arc::new(AppState {
@@ -76,6 +82,7 @@ async fn main() -> Result<(), anyhow::Error> {
         plugin_system,
         verification_system,
         llama_engine,
+        ipfs_chat_history,
     });
     
     // Build router
