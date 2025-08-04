@@ -2,6 +2,8 @@ use axum::Router;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 use dotenv::dotenv;
+use tokio::sync::Mutex;
+use crate::llama_engine_wrapper::LlamaEngineWrapper;
 
 mod config;
 mod agent_workflow;
@@ -12,6 +14,8 @@ mod persist_memory;
 mod plugin_system;
 mod tools;
 mod verification;
+mod llama_engine_wrapper;
+mod ai_worker;
 
 use crate::config::Config;
 use crate::blockchain_client::BlockchainClient;
@@ -28,6 +32,7 @@ pub struct AppState {
     pub memory_system: Arc<MemorySystem>,
     pub plugin_system: Arc<PluginSystem>,
     pub verification_system: Arc<VerificationSystem>,
+    pub llama_engine: Option<Arc<Mutex<LlamaEngineWrapper>>>, // Shared LlamaEngine instance
 }
 
 #[tokio::main]
@@ -36,6 +41,23 @@ async fn main() -> Result<(), anyhow::Error> {
     
     // Load configuration
     let config = Config::from_env()?;
+    
+    // Initialize shared LlamaEngineWrapper at startup
+    let llama_engine = {
+        let model_path = "./models/qwen2.5-1.5b-instruct-q5_k_m.gguf";
+        println!("🚀 Initializing shared LlamaEngineWrapper at startup...");
+        match LlamaEngineWrapper::new(model_path).await {
+            Ok(engine) => {
+                println!("✅ Shared LlamaEngineWrapper initialized successfully - all requests will use AI inference");
+                Some(Arc::new(Mutex::new(engine)))
+            }
+            Err(e) => {
+                println!("⚠️  Failed to initialize LlamaEngineWrapper: {}", e);
+                println!("   Application will continue with personality-driven responses");
+                None
+            }
+        }
+    };
     
     // Initialize systems
     let blockchain_client = Arc::new(BlockchainClient::new(&config).await?);
@@ -52,6 +74,7 @@ async fn main() -> Result<(), anyhow::Error> {
         memory_system,
         plugin_system,
         verification_system,
+        llama_engine,
     });
     
     // Build router

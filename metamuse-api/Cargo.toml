@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-alith = { git = "https://github.com/0xLazAI/alith", version = "0.11.0", features = ["ipfs"] }
+alith = { git = "https://github.com/0xLazAI/alith", version = "0.11.0", features = ["ipfs", "llamacpp"] }
 anyhow = "1.0.98"
 async-trait = "0.1.88"
 axum = "0.8.4"
@@ -21,3 +21,13 @@ thiserror = "2.0.12"
 tokio = "1.47.1"
 tower-http = { version = "0.6.6", features = ["cors"] }
 url = "2.5"
+llama-cpp-2 = { version = "0.1", features = ["metal"] }
+encoding_rs = "0.8"
+
+[[bin]]
+name = "metamuse-api"
+path = "src/main.rs"
+
+[[bin]]
+name = "ai-worker"
+path = "src/ai_worker.rs"

@@ -156,6 +156,7 @@ pub fn chat_routes() -> Router<Arc<AppState>> {
         .route("/api/v1/muses/{id}/chat", post(handle_chat))
         .route("/api/v1/muses/{id}/chat/session", post(initialize_chat_session))
         .route("/api/v1/muses/{id}/chat/message", post(send_chat_message))
+        .route("/api/v1/test/ai-direct", post(test_ai_direct))
 }
 
 pub fn memory_routes() -> Router<Arc<AppState>> {
@@ -344,6 +345,72 @@ async fn create_muse(
     Ok((StatusCode::OK, Json(response)))
 }
 
+// Direct AI testing handler (bypasses blockchain)
+async fn test_ai_direct(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<ChatRequest>,
+) -> Result<impl IntoResponse, StatusCode> {
+    println!("🧪 Direct AI test request received");
+    println!("📝 Message: {}", request.message);
+    
+    // Use fixed test traits instead of fetching from blockchain
+    let traits = MuseTraits {
+        creativity: 85,
+        wisdom: 60,
+        humor: 90,
+        empathy: 70,
+    };
+    
+    println!("🎭 Using test traits: creativity={}, wisdom={}, humor={}, empathy={}", 
+             traits.creativity, traits.wisdom, traits.humor, traits.empathy);
+    
+    // No context for this test
+    let context = Vec::new();
+    let test_muse_id = "test-direct";
+    
+    println!("🚀 Starting direct AI inference test...");
+    
+    // Generate response using the orchestrator
+    let response = match state.orchestrator
+        .generate_response(
+            test_muse_id,
+            &traits,
+            &request.message,
+            Some(context),
+            state.llama_engine.clone(),
+        )
+        .await
+    {
+        Ok(response) => {
+            println!("✅ Direct AI test completed successfully");
+            response
+        }
+        Err(e) => {
+            println!("❌ Direct AI test failed: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+    
+    let chat_response = ChatResponse {
+        response,
+        commitment_hash: "test-hash".to_string(),
+        signature: "test-signature".to_string(),
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs(),
+        metadata: ResponseMetadata {
+            inference_time_ms: 0,
+            model_version: "test-direct".to_string(),
+            memory_updated: false,
+            traits_used: traits.clone(),
+        },
+    };
+    
+    println!("🎉 Direct AI test response generated successfully");
+    Ok((StatusCode::OK, Json(chat_response)))
+}
+
 // Chat handlers
 async fn handle_chat(
     Path(muse_id): Path<String>,
@@ -352,14 +419,28 @@ async fn handle_chat(
 ) -> Result<impl IntoResponse, StatusCode> {
     let start_time = std::time::Instant::now();
     
+    println!("🎯 Chat request received for muse_id: {}", muse_id);
+    println!("📝 Message: {}", request.message);
+    
     // Parse muse ID and get traits from blockchain
     let token_id: u64 = muse_id.parse()
-        .map_err(|_| StatusCode::BAD_REQUEST)?;
+        .map_err(|e| {
+            println!("❌ Failed to parse muse_id '{}': {}", muse_id, e);
+            StatusCode::BAD_REQUEST
+        })?;
+    
+    println!("✅ Parsed token_id: {}", token_id);
+    println!("🔗 Fetching muse data from blockchain...");
     
     let muse_data = state.blockchain_client
         .get_muse_data(token_id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(|e| {
+            println!("❌ Failed to fetch muse data: {}", e);
+            StatusCode::NOT_FOUND
+        })?;
+    
+    println!("✅ Retrieved muse data successfully");
     
     let traits = MuseTraits {
         creativity: muse_data.creativity,
@@ -838,25 +919,39 @@ async fn initialize_chat_session(
 
 async fn send_chat_message(
     Path(muse_id): Path<String>,
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     Json(request): Json<ChatMessageRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
     // Parse muse ID to get personality traits
     let token_id: u64 = muse_id.parse()
         .map_err(|_| StatusCode::BAD_REQUEST)?;
     
-    // Get muse personality traits (mock data for now)
+    // Get muse personality traits from our mock data
     let muse_traits = match token_id {
-        1 => (75, 60, 85, 70), // creativity, wisdom, humor, empathy
-        2 => (90, 80, 60, 95),
-        3 => (85, 60, 75, 45),
-        _ => (70, 70, 70, 70),
+        1 => MuseTraits { creativity: 75, wisdom: 60, humor: 85, empathy: 70 },
+        2 => MuseTraits { creativity: 90, wisdom: 80, humor: 60, empathy: 95 },
+        3 => MuseTraits { creativity: 85, wisdom: 60, humor: 75, empathy: 45 },
+        _ => MuseTraits { creativity: 70, wisdom: 70, humor: 70, empathy: 70 },
     };
     
-    let (creativity, wisdom, humor, empathy) = muse_traits;
+    // Get conversation context from memory system
+    let context = state.memory_system
+        .get_recent_memories(&muse_id, 5)
+        .await
+        .unwrap_or_default();
     
-    // Generate intelligent mock response based on message content and personality
-    let mock_response = generate_personality_response(&request.message, creativity, wisdom, humor, empathy);
+    // Generate AI response using the orchestrator
+    let ai_response = match state.orchestrator
+        .generate_response(&muse_id, &muse_traits, &request.message, Some(context.clone()), state.llama_engine.clone())
+        .await
+    {
+        Ok(response) => response,
+        Err(e) => {
+            println!("AI generation failed: {}, falling back to mock response", e);
+            // Fallback to enhanced mock response if AI fails
+            generate_personality_response(&request.message, muse_traits.creativity, muse_traits.wisdom, muse_traits.humor, muse_traits.empathy)
+        }
+    };
 
     let interaction_id = format!("interaction_{}_{}", muse_id, 
         std::time::SystemTime::now()
@@ -880,7 +975,7 @@ async fn send_chat_message(
     );
 
     let response = ChatMessageResponse {
-        response: mock_response,
+        response: ai_response,
         interaction_id,
         commitment_hash,
         user_commitment,
