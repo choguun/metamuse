@@ -330,10 +330,26 @@ export function PersonalityChatBubble({
                 {/* Message Metadata */}
                 <div className="flex items-center justify-between mt-2 text-xs opacity-70">
                   <span>
-                    {message.timestamp instanceof Date 
-                      ? message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                      : new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                    }
+                    {(() => {
+                      try {
+                        let date: Date;
+                        if (message.timestamp instanceof Date) {
+                          date = message.timestamp;
+                        } else {
+                          date = new Date(message.timestamp);
+                        }
+                        
+                        // Check if date is valid
+                        if (isNaN(date.getTime())) {
+                          return 'Now';
+                        }
+                        
+                        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                      } catch (error) {
+                        console.warn('Invalid timestamp:', message.timestamp);
+                        return 'Now';
+                      }
+                    })()}
                   </span>
                   
                   {!isUser && message.confidence && (

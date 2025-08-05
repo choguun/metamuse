@@ -114,6 +114,8 @@ async fn main() -> Result<(), anyhow::Error> {
     
     // Build router
     let app = Router::new()
+        .route("/health", axum::routing::get(|| async { "OK" }))
+        .route("/api/health", axum::routing::get(|| async { axum::Json(serde_json::json!({"status": "OK", "timestamp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()})) }))
         .merge(route::muse_routes())
         .merge(route::chat_routes())
         .merge(route::memory_routes())

@@ -170,19 +170,113 @@ impl SemanticSearchService {
         Ok(content_hash)
     }
 
-    /// ✅ Store content to IPFS using the IPFS chat history manager
+    /// ✅ Store content to IPFS using direct Pinata API integration
     async fn store_content_to_ipfs(&self, content: &str, content_hash: &str, content_type: &str) -> Result<String> {
-        // Since IPFSChatHistoryManager doesn't have direct JSON storage methods,
-        // we'll simulate IPFS storage by creating a mock CID
-        // In production, this would integrate with direct IPFS APIs
+        println!("📦 Storing semantic content to IPFS via Pinata API");
         
-        println!("📦 Storing semantic content to IPFS (simulated for demo)");
+        // Get JWT token from config
+        let token = match &self.config.ipfs_jwt_token {
+            Some(jwt) => jwt.clone(),
+            None => {
+                return Err(anyhow::anyhow!("No IPFS JWT token configured for semantic search"));
+            }
+        };
         
-        // Create a deterministic CID based on content hash
-        let mock_cid = format!("Qm{}", &content_hash[2..48]); // Use part of content hash as mock CID
+        let filename = format!("SemanticContent_{}_{}.json", content_type, &content_hash[2..10]);
         
-        println!("✅ Semantic content stored in IPFS: {}", mock_cid);
-        Ok(mock_cid)
+        // Create JSON structure for semantic content
+        let semantic_content = serde_json::json!({
+            "content_hash": content_hash,
+            "content_type": content_type,
+            "content": content,
+            "timestamp": std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            "semantic_search": true
+        });
+        
+        let content_json = serde_json::to_string_pretty(&semantic_content)?;
+        
+        // Use direct Pinata API call
+        match self.upload_to_pinata_directly(&content_json, &filename, &token).await {
+            Ok(ipfs_hash) => {
+                println!("✅ Semantic content stored in IPFS: {}", ipfs_hash);
+                Ok(ipfs_hash)
+            }
+            Err(e) => {
+                println!("❌ Failed to store semantic content to IPFS: {}", e);
+                Err(e)
+            }
+        }
+    }
+
+    /// Direct Pinata API upload for semantic content
+    async fn upload_to_pinata_directly(&self, content: &str, filename: &str, token: &str) -> Result<String> {
+        use reqwest::multipart;
+        
+        let url = "https://uploads.pinata.cloud/v3/files";
+        
+        // Create multipart form
+        let file_part = multipart::Part::text(content.to_string())
+            .file_name(filename.to_string())
+            .mime_str("application/json")?;
+        
+        let form = multipart::Form::new()
+            .part("file", file_part);
+        
+        println!("🌐 Making direct request to Pinata API: {}", url);
+        
+        // Create a reqwest client for this request
+        let client = reqwest::Client::new();
+        let response = client
+            .post(url)
+            .multipart(form)
+            .bearer_auth(token)
+            .send()
+            .await?;
+        
+        let status = response.status();
+        println!("📡 Pinata API response status: {}", status);
+        
+        if !status.is_success() {
+            let error_text = response.text().await?;
+            println!("❌ Pinata API error response: {}", error_text);
+            return Err(anyhow::anyhow!("Pinata API error {}: {}", status, error_text));
+        }
+        
+        let response_text = response.text().await?;
+        println!("📥 Raw Pinata API response: {}", &response_text[..std::cmp::min(200, response_text.len())]);
+        
+        // Parse response to extract CID/hash
+        let response_json: serde_json::Value = serde_json::from_str(&response_text)?;
+        
+        // Try different possible response formats from Pinata API
+        let ipfs_hash = if let Some(data) = response_json.get("data") {
+            // v3 API format: { "data": { "cid": "...", "id": "..." } }
+            if let Some(cid) = data.get("cid") {
+                cid.as_str().unwrap_or_default().to_string()
+            } else if let Some(id) = data.get("id") {
+                id.as_str().unwrap_or_default().to_string()
+            } else {
+                return Err(anyhow::anyhow!("No CID or ID found in Pinata response data"));
+            }
+        } else if let Some(cid) = response_json.get("cid") {
+            // Direct CID format: { "cid": "..." }
+            cid.as_str().unwrap_or_default().to_string()
+        } else if let Some(id) = response_json.get("id") {
+            // Direct ID format: { "id": "..." }
+            id.as_str().unwrap_or_default().to_string()
+        } else {
+            return Err(anyhow::anyhow!("No recognizable hash/CID found in Pinata response: {}", response_text));
+        };
+        
+        if ipfs_hash.is_empty() {
+            return Err(anyhow::anyhow!("Empty hash returned from Pinata API"));
+        }
+        
+        println!("🎯 Extracted IPFS hash: {}", ipfs_hash);
+        Ok(ipfs_hash)
     }
 
     /// ✅ Retrieve content from IPFS using content hash or IPFS CID
@@ -198,12 +292,54 @@ impl SemanticSearchService {
         };
 
         if let Some(cid) = ipfs_cid {
-            println!("📦 Simulating IPFS content retrieval from CID: {}", cid);
-            // In a real implementation, this would fetch from IPFS
-            // For now, we'll fall back to demo content
+            println!("📥 Retrieving semantic content from IPFS CID: {}", cid);
+            
+            // Use direct IPFS gateway access for retrieval
+            let gateway_url = &self.config.ipfs_gateway_url;
+            
+            let download_url = format!("{}/{}", gateway_url, cid);
+            println!("🌐 Fetching from IPFS gateway: {}", download_url);
+            
+            // Create a reqwest client for this request
+            let client = reqwest::Client::new();
+            match client.get(&download_url).send().await {
+                Ok(response) => {
+                    let status = response.status();
+                    if status.is_success() {
+                        match response.text().await {
+                            Ok(content) => {
+                                println!("📥 Retrieved {} bytes from IPFS", content.len());
+                                
+                                // Parse the JSON structure we stored
+                                if let Ok(semantic_content) = serde_json::from_str::<serde_json::Value>(&content) {
+                                    if let Some(original_content) = semantic_content.get("content") {
+                                        if let Some(content_str) = original_content.as_str() {
+                                            println!("✅ Successfully retrieved semantic content from IPFS");
+                                            return Ok(content_str.to_string());
+                                        }
+                                    }
+                                }
+                                
+                                // If JSON parsing fails, return raw content
+                                println!("⚠️ Could not parse semantic JSON, returning raw content");
+                                return Ok(content);
+                            }
+                            Err(e) => {
+                                println!("❌ Failed to read IPFS response: {}", e);
+                            }
+                        }
+                    } else {
+                        println!("❌ IPFS gateway error {}", status);
+                    }
+                }
+                Err(e) => {
+                    println!("❌ Failed to fetch from IPFS gateway: {}", e);
+                }
+            }
         }
 
-        // Use demo content as fallback (simulates IPFS retrieval)
+        // Fallback to demo content if IPFS retrieval fails
+        println!("⚠️ IPFS retrieval failed, using demo content fallback");
         match content_type {
             "memory" => Ok(self.get_demo_memory_content(content_hash)),
             "conversation" => Ok(self.get_demo_conversation_content(content_hash)),
@@ -377,7 +513,7 @@ impl SemanticSearchService {
 
     /// Initialize with sample embeddings for demo - Now with REAL IPFS storage!
     pub async fn initialize_demo_embeddings(&self) -> Result<()> {
-        println!("🚀 Initializing demo embeddings with IPFS storage for semantic search");
+        println!("🚀 Initializing demo embeddings with REAL IPFS storage for semantic search");
 
         let demo_content = vec![
             ("Tell me a creative story about space exploration", "memory", "Creative storytelling about space"),

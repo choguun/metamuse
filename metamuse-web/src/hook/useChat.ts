@@ -2,6 +2,38 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useAccount } from 'wagmi';
 import { api, apiHelpers } from '@/lib/api';
 
+// Helper function to safely convert timestamps
+const safeTimestamp = (timestamp: any): Date => {
+  try {
+    if (timestamp instanceof Date) {
+      return isNaN(timestamp.getTime()) ? new Date() : timestamp;
+    }
+    
+    // Handle Unix timestamp (seconds since epoch) - either as number or string
+    if (typeof timestamp === 'string' || typeof timestamp === 'number') {
+      const numTimestamp = Number(timestamp);
+      
+      // If it's a valid number and appears to be a Unix timestamp (not milliseconds)
+      if (!isNaN(numTimestamp) && numTimestamp > 1000000000 && numTimestamp < 10000000000) {
+        // Convert from seconds to milliseconds
+        const date = new Date(numTimestamp * 1000);
+        return isNaN(date.getTime()) ? new Date() : date;
+      }
+      
+      // If it's already in milliseconds or a date string
+      const date = new Date(timestamp);
+      return isNaN(date.getTime()) ? new Date() : date;
+    }
+    
+    // Fallback to creating new Date
+    const date = new Date(timestamp);
+    return isNaN(date.getTime()) ? new Date() : date;
+  } catch (error) {
+    console.warn('Invalid timestamp, using current time:', timestamp);
+    return new Date();
+  }
+};
+
 export interface ChatMessage {
   id: string;
   content: string;
@@ -65,7 +97,7 @@ export function useChat(museId: string, options: UseChatOptions = {}) {
         is_active: true,
         messages: sessionData.messages.map(msg => ({
           ...msg,
-          timestamp: new Date(msg.timestamp),
+          timestamp: safeTimestamp(msg.timestamp),
         })),
       };
 
@@ -173,7 +205,7 @@ export function useChat(museId: string, options: UseChatOptions = {}) {
 
       const historicalMessages: ChatMessage[] = historyData.messages.map(msg => ({
         ...msg,
-        timestamp: new Date(msg.timestamp),
+        timestamp: safeTimestamp(msg.timestamp),
       }));
 
       return historicalMessages;
@@ -193,7 +225,7 @@ export function useChat(museId: string, options: UseChatOptions = {}) {
       
       const updatedMessages: ChatMessage[] = sessionData.messages.map(msg => ({
         ...msg,
-        timestamp: new Date(msg.timestamp),
+        timestamp: safeTimestamp(msg.timestamp),
       }));
 
       // Only update if there are new messages
