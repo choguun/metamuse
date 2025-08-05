@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-alith = { git = "https://github.com/0xLazAI/alith", version = "0.11.0", features = ["ipfs", "llamacpp"] }
+alith = { git = "https://github.com/0xLazAI/alith", version = "0.11.0", features = ["ipfs", "llamacpp", "marlin"] }
 anyhow = "1.0.98"
 async-trait = "0.1.88"
 axum = "0.8.4"

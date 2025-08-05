@@ -18,6 +18,10 @@ mod verification;
 mod llama_engine_wrapper;
 mod ai_worker;
 mod ipfs_chat_history;
+mod tee_attestation;
+mod cot_personality;
+mod rating_system;
+mod semantic_search;
 
 use crate::config::Config;
 use crate::blockchain_client::BlockchainClient;
@@ -26,6 +30,9 @@ use crate::persist_memory::MemorySystem;
 use crate::plugin_system::PluginSystem;
 use crate::verification::VerificationSystem;
 use crate::ipfs_chat_history::IPFSChatHistoryManager;
+use crate::tee_attestation::MuseTEEService;
+use crate::rating_system::AIAlignmentMarket;
+use crate::semantic_search::SemanticSearchService;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -37,6 +44,9 @@ pub struct AppState {
     pub verification_system: Arc<VerificationSystem>,
     pub llama_engine: Option<Arc<Mutex<LlamaEngineWrapper>>>, // Shared LlamaEngine instance
     pub ipfs_chat_history: Arc<IPFSChatHistoryManager>, // IPFS-powered chat history
+    pub tee_service: Arc<MuseTEEService>, // TEE attestation service
+    pub rating_market: Arc<AIAlignmentMarket>, // AI alignment marketplace
+    pub semantic_search: Arc<SemanticSearchService>, // Semantic search with embeddings
 }
 
 #[tokio::main]
@@ -70,8 +80,19 @@ async fn main() -> Result<(), anyhow::Error> {
     let plugin_system = Arc::new(PluginSystem::new().await?);
     let verification_system = Arc::new(VerificationSystem::new(&config)?);
     let ipfs_chat_history = Arc::new(IPFSChatHistoryManager::new(&config).await?);
+    let tee_service = Arc::new(MuseTEEService::new());
+    let rating_market = Arc::new(AIAlignmentMarket::new(blockchain_client.clone(), config.clone()));
+    let semantic_search = Arc::new(SemanticSearchService::new(config.clone(), ipfs_chat_history.clone()));
     
     println!("🌐 IPFS Chat History Manager initialized - Web3-native conversation persistence");
+    println!("🔒 TEE Attestation Service initialized - World's first verifiable AI companions");
+    println!("🏪 AI Alignment Market initialized - First decentralized AI improvement marketplace");
+    println!("🔍 Semantic Search Service initialized - Advanced RAG with vector embeddings");
+    
+    // Initialize demo embeddings for semantic search
+    if let Err(e) = semantic_search.initialize_demo_embeddings().await {
+        println!("⚠️ Failed to initialize demo embeddings: {}", e);
+    }
     
     // Create app state
     let app_state = Arc::new(AppState {
@@ -83,6 +104,9 @@ async fn main() -> Result<(), anyhow::Error> {
         verification_system,
         llama_engine,
         ipfs_chat_history,
+        tee_service,
+        rating_market,
+        semantic_search,
     });
     
     // Build router
@@ -93,6 +117,8 @@ async fn main() -> Result<(), anyhow::Error> {
         .merge(memory_routes_enhanced::enhanced_memory_routes())
         .merge(route::plugin_routes())
         .merge(route::verification_routes())
+        .merge(route::rating_routes())
+        .merge(route::semantic_routes())
         .with_state(app_state)
         .layer(CorsLayer::permissive());
     

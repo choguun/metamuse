@@ -8,7 +8,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use crate::{AppState, persist_memory::InteractionData, muse_orchestrator::MuseTraits};
+use crate::{AppState, persist_memory::InteractionData, muse_orchestrator::MuseTraits, rating_system::InteractionRating, semantic_search::{SemanticQuery, SemanticSearchResult}};
 
 // Request/Response types
 #[derive(Debug, Deserialize)]
@@ -139,6 +139,8 @@ pub struct ChatMessageResponse {
     pub interaction_id: String,
     pub commitment_hash: String,
     pub user_commitment: String,
+    pub tee_attestation: Option<String>,
+    pub tee_verified: bool,
 }
 
 // Route implementations
@@ -179,6 +181,26 @@ pub fn verification_routes() -> Router<Arc<AppState>> {
         .route("/api/v1/muses/{id}/events", get(get_muse_events))
         .route("/api/v1/blockchain/balance", get(get_account_balance))
         .route("/api/v1/blockchain/gas-price", get(get_gas_price))
+}
+
+// ✅ NEW: AI Alignment Market routes - First decentralized AI improvement marketplace
+pub fn rating_routes() -> Router<Arc<AppState>> {
+    Router::new()
+        .route("/api/v1/ratings/submit", post(submit_rating))
+        .route("/api/v1/ratings/muse/{id}/stats", get(get_muse_statistics))
+        .route("/api/v1/ratings/platform/stats", get(get_platform_statistics))
+        .route("/api/v1/ratings/top/{category}", get(get_top_muses))
+        .route("/api/v1/ratings/user/{address}/rewards", get(get_user_rewards))
+}
+
+// ✅ NEW: Semantic Search routes - Advanced RAG with vector embeddings
+pub fn semantic_routes() -> Router<Arc<AppState>> {
+    Router::new()
+        .route("/api/v1/semantic/search", post(semantic_search))
+        .route("/api/v1/semantic/similar/{muse_id}", post(find_similar_content))
+        .route("/api/v1/semantic/context/{muse_id}", post(get_contextual_memories))
+        .route("/api/v1/semantic/stats", get(get_semantic_stats))
+        .route("/api/v1/semantic/store", post(store_content_embedding))
 }
 
 // Muse management handlers
@@ -1061,7 +1083,28 @@ async fn send_chat_message(
         }
     };
 
-    // Step 4: Add AI response to IPFS
+    // Step 4: Generate TEE attestation for AI response - WORLD'S FIRST!
+    let tee_verified_response = match state.tee_service
+        .generate_verified_response(
+            muse_id.clone(),
+            request.user_address.clone(),
+            ai_response.clone(),
+            muse_traits.clone(),
+            request.session_id.clone(),
+        )
+        .await
+    {
+        Ok(verified) => {
+            println!("🔒 TEE attestation generated for AI response");
+            Some(verified)
+        }
+        Err(e) => {
+            println!("⚠️ TEE attestation failed: {}, continuing without TEE", e);
+            None
+        }
+    };
+
+    // Step 5: Add AI response to IPFS
     let ai_message_id = format!("ai_msg_{}", 
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -1111,9 +1154,125 @@ async fn send_chat_message(
         interaction_id,
         commitment_hash,
         user_commitment,
+        tee_attestation: tee_verified_response.as_ref().map(|t| t.attestation_hex.clone()),
+        tee_verified: tee_verified_response.as_ref().map_or(false, |t| t.tee_verified),
     };
 
     Ok((StatusCode::OK, Json(response)))
+}
+
+// ✅ NEW: AI Alignment Market API handlers
+async fn submit_rating(
+    State(state): State<Arc<AppState>>,
+    Json(rating): Json<InteractionRating>,
+) -> Result<impl IntoResponse, StatusCode> {
+    println!("🏪 Received rating submission for muse #{}", rating.muse_id);
+    println!("   Quality: {}, Personality: {}, Helpfulness: {}", 
+             rating.quality_score, rating.personality_accuracy, rating.helpfulness);
+    
+    // Validate the rating
+    if let Err(e) = state.rating_market.validate_rating(&rating) {
+        println!("❌ Rating validation failed: {}", e);
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    
+    // Submit the rating
+    match state.rating_market.submit_rating(rating).await {
+        Ok(result) => {
+            println!("✅ Rating submission result: success={}, reward={} MUSE", 
+                     result.success, result.reward_amount);
+            Ok((StatusCode::OK, Json(result)))
+        }
+        Err(e) => {
+            println!("❌ Rating submission failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_muse_statistics(
+    Path(muse_id): Path<String>,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let muse_id: u64 = muse_id.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
+    
+    println!("📊 Fetching statistics for muse #{}", muse_id);
+    
+    match state.rating_market.get_muse_statistics(muse_id).await {
+        Ok(stats) => {
+            println!("✅ Retrieved muse stats: {} ratings, {:.1} avg quality", 
+                     stats.total_ratings, stats.average_quality);
+            Ok((StatusCode::OK, Json(stats)))
+        }
+        Err(e) => {
+            println!("❌ Failed to get muse statistics: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_platform_statistics(
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, StatusCode> {
+    println!("🌐 Fetching platform-wide statistics");
+    
+    match state.rating_market.get_platform_statistics().await {
+        Ok(stats) => {
+            println!("✅ Platform stats: {} users, {} ratings, {} rewards distributed", 
+                     stats.total_users, stats.total_ratings, stats.total_rewards_distributed);
+            Ok((StatusCode::OK, Json(stats)))
+        }
+        Err(e) => {
+            println!("❌ Failed to get platform statistics: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_top_muses(
+    Path(category): Path<String>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let category: u8 = category.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
+    let limit: usize = params.get("limit")
+        .and_then(|l| l.parse().ok())
+        .unwrap_or(5);
+    
+    println!("🏆 Fetching top {} muses for category {}", limit, category);
+    
+    match state.rating_market.get_top_muses(category, limit).await {
+        Ok(top_muses) => {
+            println!("✅ Retrieved {} top muses", top_muses.len());
+            Ok((StatusCode::OK, Json(top_muses)))
+        }
+        Err(e) => {
+            println!("❌ Failed to get top muses: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)        
+        }
+    }
+}
+
+async fn get_user_rewards(
+    Path(address): Path<String>,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, StatusCode> {
+    println!("💰 Fetching rewards for user: {}", address);
+    
+    match state.rating_market.get_user_rewards(&address).await {
+        Ok(rewards) => {
+            println!("✅ User has earned {} MUSE tokens", rewards);
+            Ok((StatusCode::OK, Json(serde_json::json!({
+                "user_address": address,
+                "total_rewards": rewards,
+                "token_symbol": "MUSE"
+            }))))
+        }
+        Err(e) => {
+            println!("❌ Failed to get user rewards: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
 
 fn generate_personality_response(message: &str, creativity: u8, wisdom: u8, humor: u8, empathy: u8) -> String {
@@ -1250,4 +1409,135 @@ fn generate_personality_response(message: &str, creativity: u8, wisdom: u8, humo
         .as_secs() as usize % response_options.len();
     
     response_options[index].to_string()
+}
+
+// ✅ NEW: Semantic Search API handlers - Advanced RAG with vector embeddings
+async fn semantic_search(
+    State(state): State<Arc<AppState>>,
+    Json(query): Json<SemanticQuery>,
+) -> Result<impl IntoResponse, StatusCode> {
+    println!("🔍 Received semantic search query: '{}'", query.query_text);
+    println!("   Content types: {:?}, min_relevance: {}, max_results: {}", 
+             query.content_types, query.min_relevance, query.max_results);
+    
+    match state.semantic_search.semantic_search(query).await {
+        Ok(results) => {
+            println!("✅ Semantic search returned {} results", results.len());
+            Ok((StatusCode::OK, Json(results)))
+        }
+        Err(e) => {
+            println!("❌ Semantic search failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn find_similar_content(
+    Path(muse_id): Path<String>,
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<serde_json::Value>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let content = request.get("content")
+        .and_then(|c| c.as_str())
+        .ok_or(StatusCode::BAD_REQUEST)?;
+    
+    let similarity_threshold = request.get("similarity_threshold")
+        .and_then(|t| t.as_f64())
+        .unwrap_or(0.7);
+    
+    let max_results = request.get("max_results")
+        .and_then(|m| m.as_u64())
+        .unwrap_or(5) as usize;
+    
+    println!("🔍 Finding similar content for muse {} (threshold: {}, max: {})", 
+             muse_id, similarity_threshold, max_results);
+    
+    match state.semantic_search.find_similar_content(content, similarity_threshold, max_results).await {
+        Ok(results) => {
+            println!("✅ Found {} similar content items", results.len());
+            Ok((StatusCode::OK, Json(results)))
+        }
+        Err(e) => {
+            println!("❌ Similar content search failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_contextual_memories(
+    Path(muse_id): Path<String>,
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<serde_json::Value>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let user_message = request.get("user_message")
+        .and_then(|m| m.as_str())
+        .ok_or(StatusCode::BAD_REQUEST)?;
+    
+    let context_window = request.get("context_window")
+        .and_then(|w| w.as_u64())
+        .unwrap_or(5) as usize;
+    
+    println!("🧠 Retrieving contextual memories for muse {} (window: {})", muse_id, context_window);
+    
+    match state.semantic_search.get_contextual_memories(user_message, &muse_id, context_window).await {
+        Ok(memories) => {
+            println!("✅ Retrieved {} contextual memories", memories.len());
+            Ok((StatusCode::OK, Json(memories)))
+        }
+        Err(e) => {
+            println!("❌ Contextual memory retrieval failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_semantic_stats(
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, StatusCode> {
+    println!("📊 Fetching semantic search statistics");
+    
+    match state.semantic_search.get_stats().await {
+        Ok(stats) => {
+            println!("✅ Retrieved semantic search stats");
+            Ok((StatusCode::OK, Json(stats)))
+        }
+        Err(e) => {
+            println!("❌ Failed to get semantic stats: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn store_content_embedding(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<serde_json::Value>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let content = request.get("content")
+        .and_then(|c| c.as_str())
+        .ok_or(StatusCode::BAD_REQUEST)?;
+    
+    let content_type = request.get("content_type")
+        .and_then(|t| t.as_str())
+        .unwrap_or("memory");
+    
+    let metadata: std::collections::HashMap<String, String> = request.get("metadata")
+        .and_then(|m| serde_json::from_value(m.clone()).ok())
+        .unwrap_or_default();
+    
+    println!("📦 Storing embedding for {} content (length: {})", content_type, content.len());
+    
+    match state.semantic_search.store_embedding(content, content_type, metadata).await {
+        Ok(content_hash) => {
+            println!("✅ Stored embedding with hash: {}", content_hash);
+            Ok((StatusCode::OK, Json(serde_json::json!({
+                "success": true,
+                "content_hash": content_hash,
+                "content_type": content_type
+            }))))
+        }
+        Err(e) => {
+            println!("❌ Failed to store embedding: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }

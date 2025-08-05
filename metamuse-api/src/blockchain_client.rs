@@ -12,6 +12,25 @@ use std::{sync::Arc, str::FromStr, collections::HashMap};
 use tokio::sync::RwLock;
 use crate::{config::Config, muse_orchestrator::MuseTraits};
 
+// ✅ NEW: AI Alignment Market data structures
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MuseBlockchainStats {
+    pub total_ratings: u64,
+    pub average_quality: u64,    // Scaled by 100 on blockchain
+    pub average_personality: u64, // Scaled by 100 on blockchain  
+    pub average_helpfulness: u64, // Scaled by 100 on blockchain
+    pub total_rewards: u64,
+    pub last_updated: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlatformBlockchainStats {
+    pub total_users: u64,
+    pub total_ratings: u64,
+    pub total_rewards_distributed: u64,
+    pub active_muses: u64,
+}
+
 // Generate contract bindings from ABI
 abigen!(
     MetaMuseContract,
@@ -530,6 +549,78 @@ impl BlockchainClient {
         };
         
         Ok(event_data)
+    }
+    
+    // ✅ NEW: AI Alignment Market blockchain integration
+    pub async fn submit_interaction_rating(
+        &self,
+        muse_id: u64,
+        interaction_hash: &str,
+        quality_score: u8,
+        personality_accuracy: u8,
+        helpfulness: u8,
+        feedback: &str,
+    ) -> Result<String> {
+        println!("🏪 Submitting rating to blockchain for muse #{}", muse_id);
+        println!("   Scores: Q={}, P={}, H={}", quality_score, personality_accuracy, helpfulness);
+        
+        // For hackathon demo, return mock transaction hash
+        let mock_tx_hash = format!("0x{:064x}", 
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos() % (u64::MAX as u128)
+        );
+        
+        println!("✅ Mock rating transaction: {}", mock_tx_hash);
+        Ok(mock_tx_hash)
+    }
+
+    pub async fn get_muse_stats(&self, muse_id: u64) -> Result<MuseBlockchainStats> {
+        println!("📊 Fetching blockchain stats for muse #{}", muse_id);
+        
+        // Return mock stats for demo
+        Ok(MuseBlockchainStats {
+            total_ratings: 15,
+            average_quality: 820, // Scaled by 100
+            average_personality: 760,
+            average_helpfulness: 850,
+            total_rewards: 195,
+            last_updated: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+        })
+    }
+
+    pub async fn get_platform_stats(&self) -> Result<PlatformBlockchainStats> {
+        println!("🌐 Fetching platform blockchain statistics");
+        
+        Ok(PlatformBlockchainStats {
+            total_users: 47,
+            total_ratings: 234,
+            total_rewards_distributed: 3018,
+            active_muses: 8,
+        })
+    }
+
+    pub async fn check_user_rating(&self, user_address: &str, muse_id: u64, interaction_hash: &str) -> Result<bool> {
+        println!("🔍 Checking if user {} has rated muse {} interaction", user_address, muse_id);
+        
+        // For demo, return false to allow all ratings
+        Ok(false)
+    }
+
+    pub async fn get_user_rewards(&self, user_address: &str) -> Result<u64> {
+        println!("💰 Fetching user rewards for {}", user_address);
+        
+        // Mock user rewards based on address hash for consistency
+        let hash_sum: u64 = user_address.chars()
+            .map(|c| c as u64)
+            .sum();
+        
+        let mock_rewards = (hash_sum % 200) + 10; // 10-209 MUSE tokens
+        Ok(mock_rewards)
     }
 }
 

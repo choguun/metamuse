@@ -5,7 +5,10 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use crate::config::Config;
 use crate::llama_engine_wrapper::LlamaEngineWrapper;
+use crate::cot_personality::{CoTPersonalityEngine, CoTPersonalityResponse};
+use crate::semantic_search::{SemanticSearchService, SemanticQuery};
 use alith::core::chat::Message;
+use alith::LLM;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MuseTraits {
@@ -462,6 +465,340 @@ impl MuseOrchestrator {
             format!("That's interesting! As a muse with creativity: {}, wisdom: {}, humor: {}, and empathy: {}, I find your message intriguing. Tell me more about your thoughts on this.",
                 traits.creativity, traits.wisdom, traits.humor, traits.empathy)
         }
+    }
+
+    /// Generate response with Chain of Thought reasoning - BREAKTHROUGH!
+    pub async fn generate_cot_response(
+        &self,
+        muse_id: &str,
+        traits: &MuseTraits,
+        user_message: &str,
+        chat_history: Vec<Message>,
+    ) -> Result<CoTPersonalityResponse> {
+        println!("🧠 Generating Chain of Thought response with explainable reasoning");
+        
+        // Initialize Alith LLM for CoT reasoning
+        let llm_client = match LLM::from_model_name("gpt-4") {
+            Ok(client) => client,
+            Err(e) => {
+                println!("⚠️ Failed to initialize LLM for CoT: {}, falling back to structured analysis", e);
+                return self.generate_structured_cot_fallback(muse_id, traits, user_message, chat_history).await;
+            }
+        };
+        
+        // Create CoT personality engine
+        let cot_engine = CoTPersonalityEngine::new(llm_client);
+        
+        // Generate response with full reasoning transparency
+        match cot_engine.generate_reasoned_response(muse_id, traits, user_message, chat_history).await {
+            Ok(response) => {
+                println!("✅ Chain of Thought reasoning completed successfully");
+                println!("🔍 Reasoning steps: {:?}", response.reasoning_steps);
+                Ok(response)
+            }
+            Err(e) => {
+                println!("⚠️ CoT reasoning failed: {}, generating structured fallback", e);
+                self.generate_structured_cot_fallback(muse_id, traits, user_message, vec![]).await
+            }
+        }
+    }
+
+    /// Generate structured CoT fallback when Alith LLM unavailable
+    async fn generate_structured_cot_fallback(
+        &self,
+        muse_id: &str,
+        traits: &MuseTraits,
+        user_message: &str,
+        _chat_history: Vec<Message>,
+    ) -> Result<CoTPersonalityResponse> {
+        println!("🔄 Generating structured CoT fallback response");
+        
+        // Generate structured reasoning analysis
+        let reasoning = crate::cot_personality::PersonalityReasoning {
+            creativity_analysis: format!("High creativity ({}%) drives innovative and original response approach", traits.creativity),
+            wisdom_analysis: format!("Wisdom level ({}%) influences depth of insights and thoughtful consideration", traits.wisdom),
+            humor_analysis: format!("Humor trait ({}%) affects conversational tone and appropriate lightness", traits.humor),
+            empathy_analysis: format!("Empathy ({}%) guides emotional understanding and supportive response style", traits.empathy),
+            final_reasoning: "Balanced combination of all personality traits creates a unique, multi-dimensional response tailored to user needs".to_string(),
+            confidence_score: 0.75,
+        };
+
+        // Calculate trait influence weights
+        let total = traits.creativity + traits.wisdom + traits.humor + traits.empathy;
+        let traits_influence = crate::cot_personality::TraitsInfluence {
+            creativity_weight: traits.creativity as f32 / total as f32,
+            wisdom_weight: traits.wisdom as f32 / total as f32,
+            humor_weight: traits.humor as f32 / total as f32,
+            empathy_weight: traits.empathy as f32 / total as f32,
+        };
+
+        // Generate reasoning steps
+        let reasoning_steps = vec![
+            format!("🎨 Creativity Analysis: {}% influence on response innovation", traits.creativity),
+            format!("🧠 Wisdom Analysis: {}% influence on response depth", traits.wisdom),
+            format!("😄 Humor Analysis: {}% influence on response tone", traits.humor),
+            format!("❤️ Empathy Analysis: {}% influence on emotional connection", traits.empathy),
+            "⚖️ Balanced trait synthesis for optimal personality expression".to_string(),
+        ];
+
+        // Generate the actual response using personality-based logic
+        let response_text = self.generate_basic_response(user_message, traits);
+
+        Ok(CoTPersonalityResponse {
+            response: response_text,
+            reasoning,
+            reasoning_steps,
+            traits_influence,
+        })
+    }
+
+    /// ✅ NEW: Generate response with semantic memory retrieval - Enhanced RAG
+    pub async fn generate_response_with_semantic_memories(
+        &self,
+        muse_id: &str,
+        traits: &MuseTraits,
+        user_message: &str,
+        chat_history: Vec<Message>,
+        semantic_search: Arc<SemanticSearchService>,
+        llama_engine: Option<Arc<Mutex<LlamaEngineWrapper>>>,
+    ) -> Result<String> {
+        println!("🔍 Generating response with semantic memory retrieval for muse {}", muse_id);
+        
+        // Step 1: Retrieve contextual memories using semantic search
+        let contextual_memories = match semantic_search
+            .get_contextual_memories(user_message, muse_id, 5)
+            .await
+        {
+            Ok(memories) => {
+                println!("🧠 Retrieved {} contextual memories from semantic search", memories.len());
+                memories
+            }
+            Err(e) => {
+                println!("⚠️ Semantic memory retrieval failed: {}, continuing without memories", e);
+                Vec::new()
+            }
+        };
+
+        // Step 2: Find similar conversations from past interactions
+        let similar_content = match semantic_search
+            .find_similar_content(user_message, 0.6, 3)
+            .await
+        {
+            Ok(similar) => {
+                println!("🔍 Found {} similar past interactions", similar.len());
+                similar
+            }
+            Err(e) => {
+                println!("⚠️ Similar content search failed: {}, continuing without", e);
+                Vec::new()
+            }
+        };
+
+        // Step 3: Store current conversation context as memory for future retrieval
+        let mut metadata = std::collections::HashMap::new();
+        metadata.insert("muse_id".to_string(), muse_id.to_string());
+        metadata.insert("user_message_length".to_string(), user_message.len().to_string());
+        metadata.insert("creativity".to_string(), traits.creativity.to_string());
+        metadata.insert("wisdom".to_string(), traits.wisdom.to_string());
+        metadata.insert("humor".to_string(), traits.humor.to_string());
+        metadata.insert("empathy".to_string(), traits.empathy.to_string());
+
+        // Store user message for future semantic retrieval
+        let _ = semantic_search
+            .store_embedding(user_message, "conversation", metadata.clone())
+            .await;
+
+        // Step 4: Build enhanced prompt with semantic context
+        let semantic_context = self.build_semantic_context(&contextual_memories, &similar_content);
+        
+        // Prepare muse if needed
+        self.prepare_for_muse(muse_id).await?;
+        
+        // Create personality-driven system prompt with semantic enhancements
+        let enhanced_system_prompt = self.build_enhanced_system_prompt(traits, &semantic_context);
+        
+        // Check if we have a shared LlamaEngineWrapper available
+        if let Some(engine_arc) = llama_engine {
+            println!("🎯 Using shared LlamaEngineWrapper with semantic context for AI inference");
+            
+            let engine_guard = engine_arc.lock().await;
+            
+            // Use temperature based on creativity trait
+            let temperature = (traits.creativity as f32) / 100.0 * 0.8;
+            let max_tokens = 4096;
+            
+            // Create full prompt with semantic context and history
+            let mut full_prompt = enhanced_system_prompt.clone();
+            
+            // Add semantic context if available
+            if !contextual_memories.is_empty() || !similar_content.is_empty() {
+                full_prompt.push_str("\n\n📚 RELEVANT MEMORIES AND CONTEXT:\n");
+                
+                if !contextual_memories.is_empty() {
+                    full_prompt.push_str("Recent contextual memories:\n");
+                    for (i, memory) in contextual_memories.iter().take(3).enumerate() {
+                        full_prompt.push_str(&format!("{}. {} (relevance: {:.1}%)\n", 
+                            i + 1, memory.content, memory.relevance_score * 100.0));
+                    }
+                }
+                
+                if !similar_content.is_empty() {
+                    full_prompt.push_str("\nSimilar past conversations:\n");
+                    for (i, similar) in similar_content.iter().enumerate() {
+                        full_prompt.push_str(&format!("{}. {} (relevance: {:.1}%)\n", 
+                            i + 1, similar.content, similar.relevance_score * 100.0));
+                    }
+                }
+            }
+            
+            // Add conversation history
+            if !chat_history.is_empty() {
+                full_prompt.push_str("\n\nConversation History:\n");
+                for msg in &chat_history {
+                    let role_display = match msg.role.as_str() {
+                        "user" => "User",
+                        "assistant" => "Muse",
+                        "system" => "System",
+                        _ => &msg.role,
+                    };
+                    full_prompt.push_str(&format!("{}: {}\n", role_display, msg.content));
+                }
+            }
+            
+            // Add current user message
+            full_prompt.push_str(&format!("\nUser: {}\n\nMuse:", user_message));
+            
+            // Debug logging
+            println!("AI parameters - Temperature: {:.2}, Max tokens: {}", temperature, max_tokens);
+            println!("Enhanced prompt with semantic context length: {} characters", full_prompt.len());
+            println!("Semantic memories: {}, Similar content: {}, Chat history: {}", 
+                     contextual_memories.len(), similar_content.len(), chat_history.len());
+            
+            // Generate response using our custom wrapper
+            let response = engine_guard
+                .generate(&full_prompt, temperature, max_tokens)
+                .await
+                .map_err(|e| anyhow::anyhow!("AI inference failed: {}", e))?;
+            
+            // Store AI response as memory for future retrieval
+            let mut ai_metadata = metadata.clone();
+            ai_metadata.insert("response_type".to_string(), "ai_generated".to_string());
+            ai_metadata.insert("semantic_enhanced".to_string(), "true".to_string());
+            let _ = semantic_search
+                .store_embedding(&response, "ai_response", ai_metadata)
+                .await;
+            
+            // Check if this is a real AI response or a personality-based simulation
+            if response.contains("technical limitation") || 
+               response.contains("BackendAlreadyInitialized") || 
+               response.contains("KV cache") ||
+               response.contains("limitation explanation") ||
+               response.contains("cannot provide AI-generated responses") {
+                println!("⚠️ Technical fallback response returned (NOT AI inference)");
+                println!("🎭 Falling back to semantic-enhanced personality response");
+                
+                // Generate personality-based response enhanced with semantic context
+                return Ok(self.generate_semantic_enhanced_fallback(
+                    user_message, traits, &chat_history, &contextual_memories, &similar_content
+                ));
+            }
+            
+            println!("🎯 Real AI inference successful with semantic enhancement - returning response");
+            Ok(response)
+        } else {
+            println!("⚠️ No LlamaEngineWrapper available, using semantic-enhanced personality response");
+            Ok(self.generate_semantic_enhanced_fallback(
+                user_message, traits, &chat_history, &contextual_memories, &similar_content
+            ))
+        }
+    }
+
+    /// Build semantic context from retrieved memories and similar content
+    fn build_semantic_context(
+        &self,
+        contextual_memories: &[crate::semantic_search::SemanticSearchResult],
+        similar_content: &[crate::semantic_search::SemanticSearchResult],
+    ) -> String {
+        let mut context = String::new();
+        
+        if !contextual_memories.is_empty() {
+            context.push_str("Relevant memories: ");
+            for memory in contextual_memories.iter().take(3) {
+                context.push_str(&format!("\"{}\" ", memory.content));
+            }
+        }
+        
+        if !similar_content.is_empty() {
+            if !context.is_empty() {
+                context.push_str(" | ");
+            }
+            context.push_str("Similar discussions: ");
+            for similar in similar_content.iter().take(2) {
+                context.push_str(&format!("\"{}\" ", similar.content));
+            }
+        }
+        
+        context
+    }
+
+    /// Build enhanced system prompt with semantic context
+    fn build_enhanced_system_prompt(&self, traits: &MuseTraits, semantic_context: &str) -> String {
+        let base_prompt = self.build_personality_system_prompt(traits);
+        
+        if semantic_context.is_empty() {
+            return base_prompt;
+        }
+        
+        format!(
+            "{}\n\n🔍 SEMANTIC CONTEXT AWARENESS:\n\
+            You have access to relevant memories and similar past conversations that provide context for this interaction. \
+            Use this context to provide more informed, personalized, and contextually relevant responses. \
+            The semantic context helps you understand patterns in previous interactions and maintain consistency.\n\n\
+            Semantic Context: {}\n\n\
+            Instructions: Integrate this contextual information naturally into your response while maintaining your unique personality.",
+            base_prompt, semantic_context
+        )
+    }
+
+    /// Generate semantic-enhanced fallback response when AI inference unavailable
+    fn generate_semantic_enhanced_fallback(
+        &self,
+        user_message: &str,
+        traits: &MuseTraits,
+        chat_history: &[Message],
+        contextual_memories: &[crate::semantic_search::SemanticSearchResult],
+        similar_content: &[crate::semantic_search::SemanticSearchResult],
+    ) -> String {
+        println!("🔄 Generating semantic-enhanced personality fallback");
+        
+        let mut base_response = self.generate_personality_fallback(user_message, traits, chat_history);
+        
+        // Enhance response with semantic insights
+        if !contextual_memories.is_empty() {
+            let memory_insight = &contextual_memories[0];
+            if memory_insight.relevance_score > 0.8 {
+                base_response = format!(
+                    "{} This reminds me of something we've discussed before - there seems to be a pattern in how you approach these topics.",
+                    base_response
+                );
+            }
+        }
+        
+        if !similar_content.is_empty() && traits.wisdom > 70 {
+            base_response = format!(
+                "{} I notice this connects to themes we've explored in our previous conversations, which gives me deeper insight into your perspective.",
+                base_response
+            );
+        }
+        
+        if contextual_memories.len() > 2 && traits.empathy > 80 {
+            base_response = format!(
+                "{} I'm drawing on our shared history of conversations to better understand and support you.",
+                base_response
+            );
+        }
+        
+        base_response
     }
 }
 
