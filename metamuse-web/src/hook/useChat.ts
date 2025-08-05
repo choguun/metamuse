@@ -155,8 +155,8 @@ export function useChat(museId: string, options: UseChatOptions = {}) {
         id: response.interaction_id,
         content: response.response,
         role: 'muse',
-        timestamp: new Date(),
-        verification_status: response.verification_status,
+        timestamp: safeTimestamp(response.timestamp),
+        verification_status: 'committed',
         commitment_hash: response.commitment_hash,
       };
 

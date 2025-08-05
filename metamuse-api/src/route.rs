@@ -154,6 +154,7 @@ pub struct ChatMessageResponse {
     pub user_commitment: String,
     pub tee_attestation: Option<String>,
     pub tee_verified: bool,
+    pub timestamp: u64,
 }
 
 // Route implementations
@@ -901,39 +902,13 @@ async fn get_user_muses(
         }
     }
 
-    // If no real muses found, fall back to mock data for demo purposes
+    // If no real muses found, return empty array (cleaner UX)
     if real_muses.is_empty() {
-        println!("⚠️ No real muses found for user, using mock data for demo");
-        let mock_muses = vec![
-            MuseInfo {
-                token_id: "1".to_string(),
-                owner: address.clone(),
-                creativity: 75,
-                wisdom: 60,
-                humor: 85,
-                empathy: 70,
-                birth_block: 12345,
-                total_interactions: 42,
-                dna_hash: "0x123456789abcdef".to_string(),
-            },
-            MuseInfo {
-                token_id: "2".to_string(),
-                owner: address.clone(),
-                creativity: 90,
-                wisdom: 80,
-                humor: 60,
-                empathy: 95,
-                birth_block: 12350,
-                total_interactions: 28,
-                dna_hash: "0xfedcba987654321".to_string(),
-            },
-        ];
-
+        println!("ℹ️ No muses found for user '{}' - returning empty collection", address);
         let response = MuseListResponse {
-            muses: mock_muses,
-            total_count: 2,
+            muses: vec![],
+            total_count: 0,
         };
-
         return Ok((StatusCode::OK, Json(response)));
     }
 
@@ -1205,8 +1180,13 @@ async fn send_chat_message(
         }
         Err(e) => {
             println!("❌ AI generation with history failed: {}, falling back to mock response", e);
+            println!("🎭 Muse #{} traits: creativity={}, wisdom={}, humor={}, empathy={}", 
+                     token_id, muse_traits.creativity, muse_traits.wisdom, muse_traits.humor, muse_traits.empathy);
+            println!("🎯 User message: '{}'", request.message);
             // Fallback to enhanced mock response if AI fails
-            generate_personality_response(&request.message, muse_traits.creativity, muse_traits.wisdom, muse_traits.humor, muse_traits.empathy)
+            let response = generate_personality_response(&request.message, muse_traits.creativity, muse_traits.wisdom, muse_traits.humor, muse_traits.empathy);
+            println!("📝 Generated fallback response: '{}'", response);
+            response
         }
     };
 
@@ -1295,6 +1275,11 @@ async fn send_chat_message(
             .as_nanos() + 1) % (u64::MAX as u128)
     );
 
+    let response_timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
     let response = ChatMessageResponse {
         response: ai_response,
         interaction_id,
@@ -1302,6 +1287,7 @@ async fn send_chat_message(
         user_commitment,
         tee_attestation: tee_verified_response.as_ref().map(|t| t.attestation_hex.clone()),
         tee_verified: tee_verified_response.as_ref().map_or(false, |t| t.tee_verified),
+        timestamp: response_timestamp,
     };
 
     Ok((StatusCode::OK, Json(response)))
@@ -1446,7 +1432,7 @@ fn generate_personality_response(message: &str, creativity: u8, wisdom: u8, humo
                 "Why did the AI go to therapy? It had too many deep learning issues! 😂",
                 "What do you call a fake noodle? An impasta! I love wordplay! 🍝",
             ];
-            return jokes[std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as usize % jokes.len()].to_string();
+            return jokes[std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos() as usize % jokes.len()].to_string();
         } else if humor > 50 {
             return "Here's a light one: What do you call a sleeping bull? A bulldozer! I enjoy sharing smiles. 😊".to_string();
         } else {

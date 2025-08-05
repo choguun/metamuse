@@ -588,7 +588,35 @@ impl BlockchainClient {
         println!("🏪 Submitting rating to blockchain for muse #{}", muse_id);
         println!("   Scores: Q={}, P={}, H={}", quality_score, personality_accuracy, helpfulness);
         
-        // For hackathon demo, return mock transaction hash
+        // PRODUCTION VERSION: Uncomment for real blockchain execution
+        /*
+        let rating_contract = MuseRating::new(
+            self.config.muse_rating_contract.parse::<Address>()?,
+            Arc::clone(&self.client)
+        );
+        
+        let tx = rating_contract
+            .submit_rating(
+                muse_id.into(),
+                interaction_hash.to_string(),
+                quality_score,
+                personality_accuracy,
+                helpfulness,
+                feedback.to_string()
+            )
+            .send()
+            .await?;
+            
+        let receipt = tx.await?.ok_or_else(|| {
+            anyhow::anyhow!("Transaction failed")
+        })?;
+        
+        let tx_hash = format!("0x{:x}", receipt.transaction_hash);
+        println!("✅ Real blockchain transaction: {}", tx_hash);
+        Ok(tx_hash)
+        */
+        
+        // HACKATHON DEMO VERSION: Mock transaction for fast, reliable demos
         let mock_tx_hash = format!("0x{:064x}", 
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

@@ -7,10 +7,11 @@ import { useAccount } from 'wagmi';
 import { motion } from 'framer-motion';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { type MuseData } from '@/types';
-import { PERSONALITY_COLORS, API_BASE_URL } from '@/constants';
+import { PERSONALITY_COLORS } from '@/constants';
 import { MuseAvatar } from '@/components/avatars/MuseAvatar';
 import { ThemedContainer } from '@/components/ui/themed/ThemedContainer';
 import { usePersonalityTheme } from '@/hooks/usePersonalityTheme';
+import { api, APIError, apiHelpers } from '@/lib/api';
 
 // Separate component to avoid hook violations in map
 function MuseCard({ muse, index, getPersonalityDescription }: { 
@@ -174,27 +175,61 @@ export default function Gallery() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isConnected && address) {
-      fetchUserMuses();
-    } else {
-      setIsLoading(false);
-    }
+    const checkApiAndFetchMuses = async () => {
+      if (!isConnected || !address) {
+        setIsLoading(false);
+        return;
+      }
+
+      // Check API health first
+      const isHealthy = await apiHelpers.isHealthy();
+      if (!isHealthy) {
+        setError('Backend service is not available. Please ensure the API server is running.');
+        setIsLoading(false);
+        return;
+      }
+
+      // API is healthy, fetch muses
+      await fetchUserMuses();
+    };
+
+    checkApiAndFetchMuses();
   }, [isConnected, address]);
 
   const fetchUserMuses = async () => {
+    if (!address) return;
+    
     try {
       setIsLoading(true);
-      const response = await fetch(`${API_BASE_URL}/api/v1/muses/owner/${address}`);
+      setError(null);
       
-      if (!response.ok) {
-        throw new Error('Failed to fetch muses');
-      }
+      console.log('🔍 Fetching muses for address:', address);
       
-      const data = await response.json();
+      // Use the proper API client with retry logic
+      const data = await apiHelpers.retryRequest(
+        () => api.muses.getByOwner(address),
+        3, // max retries
+        1000 // base delay ms
+      );
+      
+      console.log('✅ Successfully fetched user muses:', data);
       setMuses(data.muses || []);
+      
     } catch (err) {
-      setError('Failed to load your muses');
-      console.error('Error fetching muses:', err);
+      console.error('❌ Error fetching muses:', err);
+      
+      // Provide more specific error messages
+      if (err instanceof APIError) {
+        if (err.status === 0) {
+          setError('Unable to connect to server. Please check if the backend is running.');
+        } else if (err.status >= 500) {
+          setError('Server error occurred. Please try again later.');
+        } else {
+          setError(`Failed to load muses: ${err.message}`);
+        }
+      } else {
+        setError('Failed to load your muses. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -274,13 +309,35 @@ export default function Gallery() {
           </div>
         ) : error ? (
           <div className="text-center py-20">
-            <div className="text-red-400 mb-4">⚠️ {error}</div>
-            <button
-              onClick={fetchUserMuses}
-              className="bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-200"
-            >
-              Try Again
-            </button>
+            <div className="w-16 h-16 bg-red-800/20 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+            </div>
+            <h3 className="text-xl font-semibold text-white mb-2">Connection Error</h3>
+            <div className="text-red-400 mb-6 max-w-md mx-auto">{error}</div>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <button
+                onClick={fetchUserMuses}
+                className="bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-200"
+              >
+                Try Again
+              </button>
+              <button
+                onClick={async () => {
+                  setError(null);
+                  const isHealthy = await apiHelpers.isHealthy();
+                  if (isHealthy) {
+                    setError('✅ API connection is working. Try fetching muses again.');
+                  } else {
+                    setError('❌ API server is not responding. Please check if the backend is running.');
+                  }
+                }}
+                className="border border-gray-600 hover:border-gray-500 text-gray-300 hover:text-white px-6 py-3 rounded-lg font-semibold transition-all duration-200"
+              >
+                Check Connection
+              </button>
+            </div>
           </div>
         ) : muses.length === 0 ? (
           <div className="text-center py-20">
@@ -291,19 +348,49 @@ export default function Gallery() {
               transition={{ type: "spring", stiffness: 200 }}
             >
               <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707.293l-2.414-2.414A1 1 0 006.586 13H4" />
               </svg>
             </motion.div>
-            <h2 className="text-2xl font-bold text-white mb-4">No Muses Yet</h2>
-            <p className="text-gray-400 mb-8 max-w-md mx-auto">
-              You haven't created any AI companions yet. Start by creating your first Muse!
-            </p>
-            <Link
-              href="/create"
-              className="inline-block bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700 text-white px-8 py-4 rounded-xl font-semibold text-lg transition-all duration-200 hover:scale-105"
-            >
-              Create Your First Muse
-            </Link>
+            <h2 className="text-2xl font-bold text-white mb-4">No Muses in Your Collection</h2>
+            <div className="text-gray-400 mb-8 max-w-2xl mx-auto space-y-3">
+              <p>
+                You haven't created any AI companions yet. Create your first Muse to get started!
+              </p>
+              <div className="text-sm bg-blue-900/20 border border-blue-800/30 rounded-lg p-4 mx-auto max-w-lg">
+                <div className="flex items-start space-x-2">
+                  <svg className="w-5 h-5 text-blue-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div className="text-left">
+                    <div className="font-semibold text-blue-300 mb-1">How it works:</div>
+                    <div className="text-blue-200">
+                      Each Muse is a unique NFT with personality traits stored on the blockchain. 
+                      Create one with custom traits, then chat and build memories together!
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <Link
+                href="/create"
+                className="inline-flex items-center justify-center bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700 text-white px-8 py-4 rounded-xl font-semibold text-lg transition-all duration-200 hover:scale-105"
+              >
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                Create Your First Muse
+              </Link>
+              <Link
+                href="/explore"
+                className="inline-flex items-center justify-center border border-purple-500 text-purple-400 hover:bg-purple-500/10 hover:text-purple-300 px-8 py-4 rounded-xl font-semibold text-lg transition-all duration-200"
+              >
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                Explore Community Muses
+              </Link>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">

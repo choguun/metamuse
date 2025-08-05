@@ -1,7 +1,7 @@
 'use client';
 
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { usePersonalityTheme } from '@/hooks/usePersonalityTheme';
 import { MuseTraits } from '@/types';
 
@@ -94,6 +94,14 @@ export function AIAlignmentMarket({
   
   const theme = usePersonalityTheme(traits);
 
+  // Debug effect to track modal state
+  useEffect(() => {
+    console.log('🏆 Modal state changed:', showReward ? 'SHOWING' : 'HIDDEN');
+    if (showReward) {
+      console.log('🏆 Modal reward data:', showReward);
+    }
+  }, [showReward]);
+
   const calculateOverallRating = useCallback((criteriaRatings: Record<string, number>) => {
     let weightedSum = 0;
     let totalWeight = 0;
@@ -118,11 +126,22 @@ export function AIAlignmentMarket({
   const handleSubmit = async () => {
     if (overallRating === 0) return;
     
+    console.log('🏆 Starting rating submission with rating:', overallRating);
+    console.log('🏆 Criteria:', ratings);
+    console.log('🏆 Feedback:', feedback);
+    
     setIsSubmitting(true);
     try {
       const reward = await onSubmitRating(overallRating, feedback, ratings);
+      console.log('🏆 Received reward data:', reward);
+      
       setShowReward(reward);
-      setTimeout(() => setShowReward(null), 5000);
+      console.log('🏆 Modal should be showing now');
+      
+      setTimeout(() => {
+        console.log('🏆 Hiding modal after 5 seconds');
+        setShowReward(null);
+      }, 5000);
     } catch (error) {
       console.error('Rating submission failed:', error);
     } finally {

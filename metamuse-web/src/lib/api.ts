@@ -105,7 +105,7 @@ const apiClient = new APIClient();
 export const api = {
   // Health check
   health: {
-    check: () => apiClient.get<{ status: string; version: string }>('/api/v1/health'),
+    check: () => apiClient.get<{ status: string; timestamp: number }>('/api/health'),
   },
 
   // Muse management
@@ -165,8 +165,9 @@ export const api = {
         response: string;
         commitment_hash: string;
         user_commitment: string;
-        verification_status: 'committed';
-        estimated_verification_time: number;
+        tee_attestation?: string;
+        tee_verified: boolean;
+        timestamp: number;
       }>(`/api/v1/muses/${museId}/chat/message`, data),
 
     // Get chat history
@@ -445,6 +446,54 @@ export const api = {
         favorite_muse: string;
         interaction_streak: number;
       }>(`/api/v1/analytics/user/${userAddress}`),
+  },
+
+  // AI Alignment Market API
+  rating: {
+    // Submit a rating
+    submitRating: (data: {
+      muse_id: number;
+      interaction_hash: string;
+      quality_score: number; // 1-10 scale
+      personality_accuracy: number; // 1-10 scale  
+      helpfulness: number; // 1-10 scale
+      feedback: string;
+      user_address: string;
+    }) =>
+      apiClient.post<{
+        success: boolean;
+        transaction_hash?: string;
+        reward_amount: number;
+        error_message?: string;
+      }>('/api/v1/ratings/submit', data),
+
+    // Get muse statistics
+    getMuseStats: (museId: string) =>
+      apiClient.get<{
+        average_rating: number;
+        total_ratings: number;
+        quality_avg: number;
+        personality_avg: number;
+        helpfulness_avg: number;
+      }>(`/api/v1/ratings/muse/${museId}/stats`),
+
+    // Get platform statistics
+    getPlatformStats: () =>
+      apiClient.get<{
+        total_users: number;
+        total_ratings: number;
+        total_rewards_distributed: number;
+        active_muses: number;
+      }>('/api/v1/ratings/platform/stats'),
+
+    // Get user rewards
+    getUserRewards: (userAddress: string) =>
+      apiClient.get<{
+        total_earned: number;
+        ratings_submitted: number;
+        average_quality_score: number;
+        last_reward_date?: string;
+      }>(`/api/v1/ratings/user/${userAddress}/rewards`),
   },
 };
 

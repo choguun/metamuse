@@ -346,7 +346,7 @@ export function PersonalityChatBubble({
                         
                         return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                       } catch (error) {
-                        console.warn('Invalid timestamp:', message.timestamp);
+                        console.warn('Invalid timestamp:', message.timestamp, error);
                         return 'Now';
                       }
                     })()}
