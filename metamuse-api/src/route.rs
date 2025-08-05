@@ -1128,6 +1128,25 @@ async fn send_chat_message(
         }
     }
 
+    // ✅ NEW: Auto-index messages for semantic search
+    let _ = state.semantic_search.auto_index_message(
+        &request.session_id,
+        &request.user_address,
+        &muse_id,
+        &request.message,
+        "user",
+        &user_message_id,
+    ).await;
+
+    let _ = state.semantic_search.auto_index_message(
+        &request.session_id,
+        &request.user_address,
+        &muse_id,
+        &ai_response,
+        "assistant", 
+        &ai_message_id,
+    ).await;
+
     let interaction_id = format!("interaction_{}_{}", muse_id, 
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

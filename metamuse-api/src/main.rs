@@ -106,7 +106,7 @@ async fn main() -> Result<(), anyhow::Error> {
         ipfs_chat_history,
         tee_service,
         rating_market,
-        semantic_search,
+        semantic_search
     });
     
     // Build router
