@@ -38,28 +38,40 @@ export default function CreateMuse() {
   };
 
   const handleCreateMuse = async () => {
-    if (!isConnected) return;
+    if (!isConnected || !address) return;
     
     setIsCreating(true);
     try {
-      // First, prepare the muse on the backend
-      const response = await fetch(`${API_BASE_URL}/api/v1/muses/prepare`, {
+      // Create the muse via backend (which handles blockchain + user tracking)
+      const response = await fetch(`${API_BASE_URL}/api/v1/muses`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(traits),
+        body: JSON.stringify({
+          creativity: traits.creativity,
+          wisdom: traits.wisdom,
+          humor: traits.humor,
+          empathy: traits.empathy,
+          user_address: address, // Include user address for tracking
+        }),
       });
       
       if (!response.ok) {
-        throw new Error('Failed to prepare muse');
+        const errorData = await response.json();
+        const errorMsg = errorData.error || 'Unknown error occurred';
+        throw new Error(`Failed to create muse: ${errorMsg}`);
       }
 
-      // Then create the NFT on blockchain
-      writeContract({
-        address: CONTRACTS.MetaMuse,
-        abi: METAMUSE_ABI,
-        functionName: 'createMuse',
-        args: [traits.creativity, traits.wisdom, traits.humor, traits.empathy],
-      });
+      const result = await response.json();
+      console.log('✅ Muse created successfully:', result);
+      
+      // Trigger success state (the existing useWaitForTransactionReceipt won't work 
+      // since we're not using direct contract calls anymore)
+      setIsCreating(false);
+      
+      // Redirect to gallery after a short delay
+      setTimeout(() => {
+        window.location.href = '/gallery';
+      }, 1500);
       
     } catch (error) {
       console.error('Error creating muse:', error);
@@ -460,20 +472,20 @@ export default function CreateMuse() {
             <div className="flex justify-center space-x-4">
               <button
                 onClick={() => setStep(2)}
-                disabled={isPending || isConfirming}
+                disabled={isCreating}
                 className="border border-gray-600 hover:border-gray-500 text-gray-300 hover:text-white px-8 py-3 rounded-lg font-semibold transition-all duration-200 disabled:opacity-50"
               >
                 Back to Preview
               </button>
               <button
                 onClick={handleCreateMuse}
-                disabled={isPending || isConfirming}
+                disabled={isCreating}
                 className="bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700 text-white px-8 py-3 rounded-lg font-semibold transition-all duration-200 disabled:opacity-50 flex items-center space-x-2"
               >
-                {isPending || isConfirming ? (
+                {isCreating ? (
                   <>
                     <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>{isPending ? 'Confirm in Wallet...' : 'Creating Muse...'}</span>
+                    <span>Creating Muse...</span>
                   </>
                 ) : (
                   <span>Create My Muse</span>

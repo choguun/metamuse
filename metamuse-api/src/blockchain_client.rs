@@ -421,14 +421,38 @@ impl BlockchainClient {
     // Helper methods
     
     fn extract_token_id_from_receipt(&self, receipt: &ethers::types::TransactionReceipt) -> Result<u64> {
-        for log in &receipt.logs {
-            // Look for MuseCreated event
-            if log.topics.len() >= 2 && log.address == self.contract_address {
-                // First topic is event signature, second is token ID
+        println!("🔍 Looking for MuseCreated event in transaction receipt with {} logs", receipt.logs.len());
+        
+        // Event signature hashes
+        let muse_created_sig = "0x4a77b3f8cc2cfce5b7b15ed802a5db3ccee04da4f6bdc99efecd26cca3b76b8b"; // keccak256("MuseCreated(uint256,address,bytes32,uint8,uint8,uint8,uint8)")
+        let transfer_sig = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"; // keccak256("Transfer(address,address,uint256)")
+        
+        for (i, log) in receipt.logs.iter().enumerate() {
+            let log_sig = format!("{:?}", log.topics[0]);
+            println!("📋 Log {}: address={:?}, topics={}, signature={}", i, log.address, log.topics.len(), log_sig);
+            
+            if log.address != self.contract_address {
+                println!("   ⏭️ Skipping log from different contract");
+                continue;
+            }
+            
+            // Look for MuseCreated event first (preferred)
+            if log_sig == muse_created_sig && log.topics.len() >= 2 {
                 let token_id = U256::from(log.topics[1].0).as_u64();
+                println!("✅ Found token ID from MuseCreated event: {}", token_id);
+                return Ok(token_id);
+            }
+            
+            // Fallback to Transfer event (ERC721 mint)
+            if log_sig == transfer_sig && log.topics.len() >= 4 {
+                // For Transfer: topics[1]=from, topics[2]=to, topics[3]=tokenId
+                let token_id = U256::from(log.topics[3].0).as_u64();
+                println!("✅ Found token ID from Transfer event: {}", token_id);
                 return Ok(token_id);
             }
         }
+        
+        println!("❌ Neither MuseCreated nor Transfer event found with token ID");
         Err(anyhow::anyhow!("Token ID not found in transaction receipt"))
     }
     

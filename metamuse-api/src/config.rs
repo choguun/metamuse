@@ -20,6 +20,7 @@ pub struct Config {
     pub commitment_verifier_address: String,
     pub muse_memory_contract_address: String,
     pub muse_plugins_contract_address: String,
+    pub muse_rating_contract_address: String,
     pub block_explorer_url: String,
     
     // Storage Configuration (Pinata IPFS)
@@ -63,6 +64,8 @@ impl Config {
             muse_memory_contract_address: env::var("MUSE_MEMORY_CONTRACT_ADDRESS")
                 .unwrap_or_else(|_| "0x0000000000000000000000000000000000000000".to_string()),
             muse_plugins_contract_address: env::var("MUSE_PLUGINS_CONTRACT_ADDRESS")
+                .unwrap_or_else(|_| "0x0000000000000000000000000000000000000000".to_string()),
+            muse_rating_contract_address: env::var("MUSE_RATING_CONTRACT_ADDRESS")
                 .unwrap_or_else(|_| "0x0000000000000000000000000000000000000000".to_string()),
             block_explorer_url: env::var("BLOCK_EXPLORER_URL")
                 .unwrap_or_else(|_| "https://hyperion-testnet-explorer.metisdevops.link".to_string()),

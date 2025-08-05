@@ -6,13 +6,14 @@ export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost
 // Blockchain Configuration
 export const CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID) || 133717; // Default to Metis Hyperion Testnet
 
-// Contract Addresses (deployed on Metis Hyperion Testnet)
+// Contract Addresses (deployed on Metis Hyperion Testnet - UPDATED FROM hyperion-testnet.env ✅)
+// Block: 4186353, Deployer: 0x3BD91974F74dF7F014EAC3747e50819375667881
 export const CONTRACTS: ContractAddresses = {
-  MetaMuse: (process.env.NEXT_PUBLIC_METAMUSE_CONTRACT || '0xeB4a6CC2b98233Fe6452b869E60C6aB095B22E21') as `0x${string}`,
-  CommitmentVerifier: (process.env.NEXT_PUBLIC_COMMITMENT_VERIFIER_CONTRACT || '0xeD467634407855e9F48C83f5800Daa16fa859597') as `0x${string}`,
-  MuseMemory: (process.env.NEXT_PUBLIC_MUSE_MEMORY_CONTRACT || '0xbfb46F49e50D1e4A591C927E47E22579EC55BEFA') as `0x${string}`,
-  MusePlugins: (process.env.NEXT_PUBLIC_MUSE_PLUGINS_CONTRACT || '0xCeE0fD2CfbDeA00338514940FF76cc42eb833fEf') as `0x${string}`,
-  MuseRating: (process.env.NEXT_PUBLIC_MUSE_RATING_CONTRACT || '0x0000000000000000000000000000000000000000') as `0x${string}`,
+  MetaMuse: (process.env.NEXT_PUBLIC_METAMUSE_CONTRACT || '0x6c31D85A73D823b542766b9E13BF11A4c77E62D5') as `0x${string}`,
+  CommitmentVerifier: (process.env.NEXT_PUBLIC_COMMITMENT_VERIFIER_CONTRACT || '0x280eB3954072AD406FF2717339F308da29AB02a1') as `0x${string}`,
+  MuseMemory: (process.env.NEXT_PUBLIC_MUSE_MEMORY_CONTRACT || '0xE578C5d88dcDE3Bdca8F953aDd7B9566DB89e67b') as `0x${string}`,
+  MusePlugins: (process.env.NEXT_PUBLIC_MUSE_PLUGINS_CONTRACT || '0x5cc0409b46E3AF067fF2E46AB9a43b50Da9DdCBF') as `0x${string}`,
+  MuseRating: (process.env.NEXT_PUBLIC_MUSE_RATING_CONTRACT || '0xd6FcF8C12275f0B68E852D5155AC1627d00D435C') as `0x${string}`,
 };
 
 // Contract ABIs - Simplified for frontend usage

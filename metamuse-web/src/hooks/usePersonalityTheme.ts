@@ -27,6 +27,7 @@ export function usePersonalityTheme(traits: MuseTraits) {
       getRadialGradient: () => `radial-gradient(circle, ${theme.gradient.join(', ')})`,
       getPrimaryWithOpacity: (opacity: number) => `${theme.primary}${Math.round(opacity * 255).toString(16).padStart(2, '0')}`,
       getSecondaryWithOpacity: (opacity: number) => `${theme.secondary}${Math.round(opacity * 255).toString(16).padStart(2, '0')}`,
+      getAccentWithOpacity: (opacity: number) => `${theme.accent}${Math.round(opacity * 255).toString(16).padStart(2, '0')}`,
       
       // Component class names based on personality
       containerClass: `themed-container ${theme.animation}`,

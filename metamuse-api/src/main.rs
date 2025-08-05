@@ -2,7 +2,8 @@ use axum::Router;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 use dotenv::dotenv;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
+use std::collections::HashMap;
 use crate::llama_engine_wrapper::LlamaEngineWrapper;
 
 mod config;
@@ -47,6 +48,7 @@ pub struct AppState {
     pub tee_service: Arc<MuseTEEService>, // TEE attestation service
     pub rating_market: Arc<AIAlignmentMarket>, // AI alignment marketplace
     pub semantic_search: Arc<SemanticSearchService>, // Semantic search with embeddings
+    pub user_muses: Arc<RwLock<HashMap<String, Vec<u64>>>>, // Map of user addresses to their muse token IDs
 }
 
 #[tokio::main]
@@ -106,7 +108,8 @@ async fn main() -> Result<(), anyhow::Error> {
         ipfs_chat_history,
         tee_service,
         rating_market,
-        semantic_search
+        semantic_search,
+        user_muses: Arc::new(RwLock::new(HashMap::new())),
     });
     
     // Build router

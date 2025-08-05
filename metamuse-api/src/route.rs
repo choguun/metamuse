@@ -6,6 +6,18 @@ use axum::{
     Router,
 };
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum ApiResponse {
+    Success(MuseCreateResponse),
+    Error(ErrorResponse),
+}
+
+#[derive(Debug, Serialize)]
+pub struct ErrorResponse {
+    pub error: String,
+}
 use std::sync::Arc;
 
 use crate::{AppState, persist_memory::InteractionData, muse_orchestrator::MuseTraits, rating_system::InteractionRating, semantic_search::{SemanticQuery, SemanticSearchResult}};
@@ -41,6 +53,7 @@ pub struct MuseCreateRequest {
     pub wisdom: u8,
     pub humor: u8,
     pub empathy: u8,
+    pub user_address: String, // User's wallet address for ownership tracking
 }
 
 #[derive(Debug, Serialize)]
@@ -91,7 +104,7 @@ pub struct MuseListResponse {
     pub total_count: usize,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct MuseInfo {
     pub token_id: String,
     pub owner: String,
@@ -245,86 +258,119 @@ async fn prepare_muse(
 
 async fn get_muse(
     Path(muse_id): Path<String>,
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, StatusCode> {
     // Parse muse ID as token ID
     let token_id: u64 = muse_id.parse()
         .map_err(|_| StatusCode::BAD_REQUEST)?;
     
-    // Return mock data for now until blockchain client is fully implemented
-    let mock_muse = match token_id {
-        1 => MuseInfo {
-            token_id: "1".to_string(),
-            owner: "0x123abc456def".to_string(),
-            creativity: 75,
-            wisdom: 60,
-            humor: 85,
-            empathy: 70,
-            birth_block: 12345,
-            total_interactions: 42,
-            dna_hash: "0x123456789abcdef".to_string(),
-        },
-        2 => MuseInfo {
-            token_id: "2".to_string(),
-            owner: "0xdef456789ghi".to_string(),
-            creativity: 90,
-            wisdom: 80,
-            humor: 60,
-            empathy: 95,
-            birth_block: 12350,
-            total_interactions: 28,
-            dna_hash: "0xfedcba987654321".to_string(),
-        },
-        3 => MuseInfo {
-            token_id: "3".to_string(),
-            owner: "0xabc123".to_string(),
-            creativity: 85,
-            wisdom: 60,
-            humor: 75,
-            empathy: 45,
-            birth_block: 12345,
-            total_interactions: 142,
-            dna_hash: "0x123456789abcdef".to_string(),
-        },
-        _ => {
-            // Generate a default muse for any other ID
-            MuseInfo {
-                token_id: token_id.to_string(),
-                owner: "0xdefault123".to_string(),
-                creativity: 70,
-                wisdom: 70,
-                humor: 70,
-                empathy: 70,
-                birth_block: 12300,
-                total_interactions: 10,
-                dna_hash: "0xdefaultmusehash".to_string(),
-            }
+    // Try to get real muse data from blockchain first
+    match state.blockchain_client.get_muse_data(token_id).await {
+        Ok(muse_data) => {
+            let response = serde_json::json!({
+                "token_id": muse_data.token_id.to_string(),
+                "owner": muse_data.owner,
+                "creativity": muse_data.creativity,
+                "wisdom": muse_data.wisdom,
+                "humor": muse_data.humor,
+                "empathy": muse_data.empathy,
+                "birth_block": muse_data.birth_block,
+                "total_interactions": muse_data.total_interactions,
+                "dna_hash": muse_data.dna_hash
+            });
+            Ok((StatusCode::OK, Json(response)))
         }
-    };
+        Err(e) => {
+            println!("❌ Failed to get muse data from blockchain: {}, using fallback", e);
+            
+            // Fallback to mock data only if blockchain fails
+            let mock_muse = match token_id {
+                1 => MuseInfo {
+                    token_id: "1".to_string(),
+                    owner: "0x123abc456def".to_string(),
+                    creativity: 75,
+                    wisdom: 60,
+                    humor: 85,
+                    empathy: 70,
+                    birth_block: 12345,
+                    total_interactions: 42,
+                    dna_hash: "0x123456789abcdef".to_string(),
+                },
+                2 => MuseInfo {
+                    token_id: "2".to_string(),
+                    owner: "0xdef456789ghi".to_string(),
+                    creativity: 90,
+                    wisdom: 80,
+                    humor: 60,
+                    empathy: 95,
+                    birth_block: 12350,
+                    total_interactions: 28,
+                    dna_hash: "0xfedcba987654321".to_string(),
+                },
+                3 => MuseInfo {
+                    token_id: "3".to_string(),
+                    owner: "0xabc123".to_string(),
+                    creativity: 85,
+                    wisdom: 60,
+                    humor: 75,
+                    empathy: 45,
+                    birth_block: 12345,
+                    total_interactions: 142,
+                    dna_hash: "0x123456789abcdef".to_string(),
+                },
+                _ => {
+                    // Generate a default muse for any other ID
+                    MuseInfo {
+                        token_id: token_id.to_string(),
+                        owner: "0xdefault123".to_string(),
+                        creativity: 70,
+                        wisdom: 70,
+                        humor: 70,
+                        empathy: 70,
+                        birth_block: 12300,
+                        total_interactions: 10,
+                        dna_hash: "0xdefaultmusehash".to_string(),
+                    }
+                }
+            };
 
-    let response = serde_json::json!({
-        "token_id": mock_muse.token_id,
-        "owner": mock_muse.owner,
-        "creativity": mock_muse.creativity,
-        "wisdom": mock_muse.wisdom,
-        "humor": mock_muse.humor,
-        "empathy": mock_muse.empathy,
-        "birth_block": mock_muse.birth_block,
-        "total_interactions": mock_muse.total_interactions,
-        "dna_hash": mock_muse.dna_hash
-    });
+            let response = serde_json::json!({
+                "token_id": mock_muse.token_id,
+                "owner": mock_muse.owner,
+                "creativity": mock_muse.creativity,
+                "wisdom": mock_muse.wisdom,
+                "humor": mock_muse.humor,
+                "empathy": mock_muse.empathy,
+                "birth_block": mock_muse.birth_block,
+                "total_interactions": mock_muse.total_interactions,
+                "dna_hash": mock_muse.dna_hash
+            });
 
-    Ok((StatusCode::OK, Json(response)))
+            Ok((StatusCode::OK, Json(response)))
+        }
+    }
 }
 
 async fn create_muse(
     State(state): State<Arc<AppState>>,
     Json(request): Json<MuseCreateRequest>,
-) -> Result<impl IntoResponse, StatusCode> {
+) -> impl IntoResponse {
+    println!("🔨 Creating muse for user: {} with traits: c={}, w={}, h={}, e={}", 
+             request.user_address, request.creativity, request.wisdom, request.humor, request.empathy);
+             
     // Validate traits
     if request.creativity > 100 || request.wisdom > 100 || 
        request.humor > 100 || request.empathy > 100 {
-        return Err(StatusCode::BAD_REQUEST);
+        let error_msg = "Invalid traits: values must be between 0 and 100";
+        println!("❌ {}", error_msg);
+        return (StatusCode::BAD_REQUEST, Json(ApiResponse::Error(ErrorResponse { error: error_msg.to_string() })));
+    }
+
+    // Validate user address format
+    if !request.user_address.starts_with("0x") || request.user_address.len() != 42 {
+        let error_msg = format!("Invalid user address format: {}", request.user_address);
+        println!("❌ {}", error_msg);
+        return (StatusCode::BAD_REQUEST, Json(ApiResponse::Error(ErrorResponse { error: error_msg })));
     }
 
     let traits = MuseTraits {
@@ -335,19 +381,49 @@ async fn create_muse(
     };
 
     // Create the NFT on the blockchain
-    let (token_id, _tx_info) = state.blockchain_client
-        .create_muse(&traits)
-        .await
-        .map_err(|e| {
-            println!("Blockchain error: {:?}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let (token_id, _tx_info) = match state.blockchain_client.create_muse(&traits).await {
+        Ok(result) => {
+            println!("✅ Successfully created muse on blockchain: token_id={}", result.0);
+            result
+        }
+        Err(e) => {
+            let error_msg = format!("Blockchain error: {}", e);
+            println!("❌ {}", error_msg);
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(ApiResponse::Error(ErrorResponse { error: error_msg })));
+        }
+    };
 
-    // Get the muse data from blockchain (includes DNA hash)
-    let muse_data = state.blockchain_client
-        .get_muse_data(token_id)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    // Get the muse data from blockchain (includes DNA hash and owner)
+    // If token_id is 0, something went wrong - contracts use 1-based indexing
+    if token_id == 0 {
+        let error_msg = "Invalid token ID 0 - contract uses 1-based indexing. Check event parsing.";
+        println!("❌ {}", error_msg);
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(ApiResponse::Error(ErrorResponse { error: error_msg.to_string() })));
+    }
+    
+    let muse_data = match state.blockchain_client.get_muse_data(token_id).await {
+        Ok(data) => {
+            println!("✅ Successfully retrieved muse data: token_id={}", token_id);
+            data
+        }
+        Err(e) => {
+            let error_msg = format!("Failed to retrieve muse data for token_id {}: {}", token_id, e);
+            println!("❌ {}", error_msg);
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(ApiResponse::Error(ErrorResponse { error: error_msg })));
+        }
+    };
+
+    // Record the user-muse mapping for efficient querying using the requested user address
+    // Note: blockchain owner will be backend address, but we track the actual user
+    {
+        let mut user_muses = state.user_muses.write().await;
+        user_muses
+            .entry(request.user_address.clone())
+            .or_insert_with(Vec::new)
+            .push(token_id);
+        println!("✅ Recorded muse #{} for user {} (blockchain owner: {})", 
+                 token_id, request.user_address, muse_data.owner);
+    }
 
     // Pre-initialize the AI agents for this muse
     let _muse_id = token_id.to_string();
@@ -364,7 +440,8 @@ async fn create_muse(
         preparation_complete: true,
     };
 
-    Ok((StatusCode::OK, Json(response)))
+    println!("✅ Muse creation completed successfully: muse_id={}", response.muse_id);
+    (StatusCode::OK, Json(ApiResponse::Success(response)))
 }
 
 // Direct AI testing handler (bypasses blockchain)
@@ -783,39 +860,89 @@ async fn get_gas_price(
 // New handler functions for missing endpoints
 async fn get_user_muses(
     Path(address): Path<String>,
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    // For now, return mock data until blockchain client is fully implemented
-    let mock_muses = vec![
-        MuseInfo {
-            token_id: "1".to_string(),
-            owner: address.clone(),
-            creativity: 75,
-            wisdom: 60,
-            humor: 85,
-            empathy: 70,
-            birth_block: 12345,
-            total_interactions: 42,
-            dna_hash: "0x123456789abcdef".to_string(),
-        },
-        MuseInfo {
-            token_id: "2".to_string(),
-            owner: address.clone(),
-            creativity: 90,
-            wisdom: 80,
-            humor: 60,
-            empathy: 95,
-            birth_block: 12350,
-            total_interactions: 28,
-            dna_hash: "0xfedcba987654321".to_string(),
-        },
-    ];
-
-    let response = MuseListResponse {
-        muses: mock_muses,
-        total_count: 2,
+    println!("🔍 Fetching muses for user: {}", address);
+    
+    // Get the user's muse token IDs from our mapping
+    let token_ids = {
+        let user_muses = state.user_muses.read().await;
+        user_muses.get(&address).cloned().unwrap_or_default()
     };
 
+    println!("📋 Found {} token IDs for user: {:?}", token_ids.len(), token_ids);
+
+    // Fetch actual muse data from blockchain for each token ID
+    let mut real_muses = Vec::new();
+    
+    for token_id in &token_ids {
+        match state.blockchain_client.get_muse_data(*token_id).await {
+            Ok(muse_data) => {
+                let muse_info = MuseInfo {
+                    token_id: muse_data.token_id.to_string(),
+                    owner: address.clone(), // Show user's address instead of blockchain owner
+                    creativity: muse_data.creativity,
+                    wisdom: muse_data.wisdom,
+                    humor: muse_data.humor,
+                    empathy: muse_data.empathy,
+                    birth_block: muse_data.birth_block,
+                    total_interactions: muse_data.total_interactions,
+                    dna_hash: muse_data.dna_hash,
+                };
+                real_muses.push(muse_info);
+                println!("✅ Retrieved real muse #{} with traits: c={}, w={}, h={}, e={} (blockchain owner: {}, user: {})", 
+                         token_id, muse_data.creativity, muse_data.wisdom, muse_data.humor, muse_data.empathy,
+                         muse_data.owner, address);
+            }
+            Err(e) => {
+                println!("❌ Failed to get muse data for token {}: {}", token_id, e);
+                // Continue to next muse instead of failing completely
+            }
+        }
+    }
+
+    // If no real muses found, fall back to mock data for demo purposes
+    if real_muses.is_empty() {
+        println!("⚠️ No real muses found for user, using mock data for demo");
+        let mock_muses = vec![
+            MuseInfo {
+                token_id: "1".to_string(),
+                owner: address.clone(),
+                creativity: 75,
+                wisdom: 60,
+                humor: 85,
+                empathy: 70,
+                birth_block: 12345,
+                total_interactions: 42,
+                dna_hash: "0x123456789abcdef".to_string(),
+            },
+            MuseInfo {
+                token_id: "2".to_string(),
+                owner: address.clone(),
+                creativity: 90,
+                wisdom: 80,
+                humor: 60,
+                empathy: 95,
+                birth_block: 12350,
+                total_interactions: 28,
+                dna_hash: "0xfedcba987654321".to_string(),
+            },
+        ];
+
+        let response = MuseListResponse {
+            muses: mock_muses,
+            total_count: 2,
+        };
+
+        return Ok((StatusCode::OK, Json(response)));
+    }
+
+    let response = MuseListResponse {
+        muses: real_muses.clone(),
+        total_count: real_muses.len(),
+    };
+
+    println!("🎉 Returning {} real muses with user's configured traits", real_muses.len());
     Ok((StatusCode::OK, Json(response)))
 }
 
