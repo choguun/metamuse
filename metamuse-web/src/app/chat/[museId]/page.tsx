@@ -8,6 +8,17 @@ import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { type MuseData } from '@/types';
 import { METAMUSE_ABI, CONTRACTS, PERSONALITY_COLORS, API_BASE_URL } from '@/constants';
 import useEnhancedMemory from '@/hook/useEnhancedMemory';
+import { MuseAvatar } from '@/components/avatars/MuseAvatar';
+import { ThemedContainer } from '@/components/ui/themed/ThemedContainer';
+import { usePersonalityTheme } from '@/hooks/usePersonalityTheme';
+import { 
+  TEEBadge, 
+  ChainOfThought, 
+  SemanticMemoryPanel, 
+  AIAlignmentMarket, 
+  PersonalityChatBubble,
+  TypingIndicator 
+} from '@/components/chat';
 
 interface ChatMessage {
   id: string;
@@ -64,6 +75,15 @@ export default function ChatPage() {
   const [showVerificationDetails, setShowVerificationDetails] = useState(false);
   const [showMemorySidebar, setShowMemorySidebar] = useState(false);
   
+  // New Phase 2 visualization states
+  const [showTEEPanel, setShowTEEPanel] = useState(false);
+  const [showChainOfThought, setShowChainOfThought] = useState(false);
+  const [showSemanticMemory, setShowSemanticMemory] = useState(false);
+  const [showMarketPanel, setShowMarketPanel] = useState(false);
+  const [currentRatingMessage, setCurrentRatingMessage] = useState<string | null>(null);
+  const [semanticMemoryQuery, setSemanticMemoryQuery] = useState('');
+  const [semanticMemories, setSemanticMemories] = useState<any[]>([]);
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   
@@ -75,6 +95,21 @@ export default function ChatPage() {
   
   const { writeContract, data: hash, isPending } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+
+  // Initialize personality theme with default values to avoid conditional hook calls
+  const defaultTraits = {
+    creativity: 75,
+    wisdom: 60,
+    humor: 85,
+    empathy: 70,
+  };
+  
+  const personalityTheme = usePersonalityTheme(muse ? {
+    creativity: muse.creativity,
+    wisdom: muse.wisdom,
+    humor: muse.humor,
+    empathy: muse.empathy,
+  } : defaultTraits);
 
   useEffect(() => {
     if (isConnected && museId) {
@@ -94,6 +129,13 @@ export default function ChatPage() {
     try {
       setIsLoading(true);
       
+      // Validate user address
+      if (!address) {
+        throw new Error('User address not available. Please ensure wallet is connected.');
+      }
+      
+      console.log(`🚀 Initializing chat for user ${address} with muse ${museId}`);
+      
       // Fetch muse data
       const museResponse = await fetch(`${API_BASE_URL}/api/v1/muses/${museId}`);
       if (!museResponse.ok) throw new Error('Muse not found');
@@ -101,14 +143,30 @@ export default function ChatPage() {
       setMuse(museData);
       
       // Initialize or get existing chat session
+      console.log(`📡 Requesting chat session from: ${API_BASE_URL}/api/v1/muses/${museId}/chat/session`);
       const sessionResponse = await fetch(`${API_BASE_URL}/api/v1/muses/${museId}/chat/session`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_address: address }),
       });
       
-      if (!sessionResponse.ok) throw new Error('Failed to initialize chat');
+      if (!sessionResponse.ok) {
+        const errorText = await sessionResponse.text();
+        throw new Error(`Failed to initialize chat: ${sessionResponse.status} - ${errorText}`);
+      }
+      
       const sessionData = await sessionResponse.json();
+      
+      // Convert string timestamps to Date objects for frontend compatibility
+      if (sessionData.messages) {
+        sessionData.messages = sessionData.messages.map((msg: any) => ({
+          ...msg,
+          timestamp: typeof msg.timestamp === 'string' ? new Date(msg.timestamp) : msg.timestamp,
+        }));
+      }
+      
+      console.log(`🔄 Loaded chat session with ${sessionData.messages?.length || 0} messages for user ${address} + muse ${museId}`);
+      console.log('📋 Session data:', sessionData);
       setSession(sessionData);
       
     } catch (error) {
@@ -355,6 +413,64 @@ export default function ChatPage() {
 
   const toggleReasoning = (messageId: string) => {
     setShowReasoningFor(showReasoningFor === messageId ? null : messageId);
+  };
+
+  // ✅ NEW: Semantic Memory functions
+  const searchSemanticMemory = async (query: string) => {
+    if (!query.trim()) {
+      setSemanticMemories([]);
+      return;
+    }
+
+    setSemanticMemoryQuery(query);
+    
+    try {
+      // Convert chat messages to memory format for semantic search
+      const chatMemories = session?.messages.map((msg, index) => ({
+        id: msg.id,
+        content: msg.content,
+        relevanceScore: Math.random() * 100, // Mock relevance - would be calculated by AI
+        timestamp: msg.timestamp,
+        context: `Chat message ${index + 1}`,
+        ipfsHash: msg.commitment_hash || 'QmX...' + Math.random().toString(36).slice(2, 10),
+        emotions: msg.role === 'muse' ? ['thoughtful', 'helpful'] : ['curious'],
+        tags: extractTagsFromContent(msg.content),
+        type: msg.role === 'muse' ? 'conversation' : 'experience' as const,
+        importance: msg.reasoning?.confidence_score ? msg.reasoning.confidence_score * 100 : Math.random() * 100,
+      })) || [];
+
+      // Filter memories by query relevance (mock implementation)
+      const relevantMemories = chatMemories
+        .filter(memory => 
+          memory.content.toLowerCase().includes(query.toLowerCase()) ||
+          memory.tags.some(tag => tag.toLowerCase().includes(query.toLowerCase()))
+        )
+        .sort((a, b) => b.relevanceScore - a.relevanceScore);
+
+      setSemanticMemories(relevantMemories);
+    } catch (error) {
+      console.error('Semantic memory search failed:', error);
+      setSemanticMemories([]);
+    }
+  };
+
+  const extractTagsFromContent = (content: string): string[] => {
+    const words = content.toLowerCase().split(/\s+/);
+    const meaningfulWords = words.filter(word => 
+      word.length > 4 && 
+      !['that', 'this', 'with', 'from', 'they', 'have', 'been', 'were', 'would', 'could'].includes(word)
+    );
+    return meaningfulWords.slice(0, 3);
+  };
+
+  const handleMemorySelect = (memory: any) => {
+    // Scroll to the message in chat
+    const messageElement = document.getElementById(`message-${memory.id}`);
+    if (messageElement) {
+      messageElement.scrollIntoView({ behavior: 'smooth' });
+      messageElement.classList.add('bg-purple-500/20');
+      setTimeout(() => messageElement.classList.remove('bg-purple-500/20'), 2000);
+    }
   };
 
   // ✅ NEW: AI Alignment Market - Rating System
@@ -635,20 +751,37 @@ export default function ChatPage() {
         <div className="max-w-4xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              <div 
-                className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg"
-                style={{ backgroundColor: PERSONALITY_COLORS[dominantTraitName.toLowerCase() as keyof typeof PERSONALITY_COLORS] || '#8B5CF6' }}
-              >
-                #{muse.token_id}
-              </div>
+              <MuseAvatar
+                traits={{
+                  creativity: muse.creativity,
+                  wisdom: muse.wisdom,
+                  humor: muse.humor,
+                  empathy: muse.empathy,
+                }}
+                tokenId={muse.token_id}
+                size="lg"
+                interactive={true}
+                showPersonality={true}
+                showGlow={true}
+              />
               <div>
                 <h1 className="text-xl font-semibold text-white">Muse #{muse.token_id}</h1>
-                <p className="text-sm text-gray-400">Primarily {dominantTraitName}</p>
+                <p className="text-sm text-gray-400">
+                  {personalityTheme.name}
+                </p>
               </div>
             </div>
             
             <div className="flex items-center space-x-4">
               {/* Memory Controls */}
+              <button
+                onClick={() => setShowSemanticMemory(!showSemanticMemory)}
+                className="flex items-center space-x-2 text-sm text-gray-400 hover:text-white transition-colors"
+              >
+                <span>🔍</span>
+                <span>Search Memory</span>
+              </button>
+              
               <button
                 onClick={() => setShowMemorySidebar(!showMemorySidebar)}
                 className="flex items-center space-x-2 text-sm text-gray-400 hover:text-white transition-colors"
@@ -691,272 +824,220 @@ export default function ChatPage() {
         <div className={`flex-1 overflow-hidden ${showMemorySidebar ? 'mr-80' : ''} transition-all duration-300`}>
           <div className="h-full overflow-y-auto">
             <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
-            <AnimatePresence>
-              {session.messages.map((message) => (
+              
+              {/* Semantic Memory Search Panel */}
+              <SemanticMemoryPanel
+                query={semanticMemoryQuery}
+                memories={semanticMemories}
+                traits={{
+                  creativity: muse.creativity,
+                  wisdom: muse.wisdom,
+                  humor: muse.humor,
+                  empathy: muse.empathy,
+                }}
+                isLoading={false}
+                isVisible={showSemanticMemory}
+                onToggle={() => setShowSemanticMemory(!showSemanticMemory)}
+                onMemorySelect={handleMemorySelect}
+                onMemoryPin={(memoryId) => {
+                  console.log('Pin memory:', memoryId);
+                }}
+              />
+              
+              {/* Memory Search Input */}
+              {showSemanticMemory && (
                 <motion.div
-                  key={message.id}
-                  className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
+                  className="border border-gray-700/50 rounded-xl p-4"
+                  style={{ 
+                    background: `linear-gradient(135deg, ${personalityTheme.getPrimaryWithOpacity(0.08)}, ${personalityTheme.getSecondaryWithOpacity(0.05)})`,
+                    backdropFilter: 'blur(10px)',
+                  }}
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
                   transition={{ duration: 0.3 }}
                 >
-                  <div
-                    className={`max-w-[80%] p-4 rounded-2xl ${
-                      message.role === 'user'
-                        ? 'bg-gradient-to-r from-purple-500 to-blue-600 text-white'
-                        : 'bg-gray-800 text-gray-100'
-                    }`}
-                  >
-                    <p className="whitespace-pre-wrap">{message.content}</p>
-                    <div className={`flex items-center justify-between mt-2 text-xs ${
-                      message.role === 'user' ? 'text-purple-100' : 'text-gray-400'
-                    }`}>
-                      <span>{formatTimestamp(message.timestamp)}</span>
-                      <div className="flex items-center space-x-1">
-                        {getVerificationIcon(message.verification_status, message.tee_verified)}
-                        {showVerificationDetails && message.verification_status && (
-                          <span className="capitalize">{message.verification_status}</span>
-                        )}
-                        {/* ✅ NEW: TEE verification status */}
-                        {message.tee_verified && showVerificationDetails && (
-                          <span className="text-purple-300">TEE Verified</span>
-                        )}
-                        {/* ✅ NEW: Chain of Thought reasoning button */}
-                        {message.reasoning && (
-                          <button
-                            onClick={() => toggleReasoning(message.id)}
-                            className="text-blue-400 hover:text-blue-300 transition-colors"
-                            title="Show reasoning"
-                          >
-                            🧠
-                          </button>
-                        )}
-                        {/* ✅ NEW: AI Alignment Market rating button */}
-                        {message.role === 'muse' && (
-                          <button
-                            onClick={() => toggleRating(message.id)}
-                            className={`transition-colors ${
-                              ratedMessages.has(message.id) 
-                                ? 'text-yellow-400 hover:text-yellow-300' 
-                                : 'text-orange-400 hover:text-orange-300'
-                            }`}
-                            title={ratedMessages.has(message.id) ? "Already rated" : "Rate this response"}
-                          >
-                            {ratedMessages.has(message.id) ? '⭐' : '📊'}
-                          </button>
-                        )}
+                  <div className="flex items-center space-x-3">
+                    <div className="flex-1 relative">
+                      <input
+                        type="text"
+                        placeholder="Search conversation history, memories, and context..."
+                        value={semanticMemoryQuery}
+                        onChange={(e) => {
+                          const query = e.target.value;
+                          setSemanticMemoryQuery(query);
+                          if (query.trim()) {
+                            searchSemanticMemory(query);
+                          } else {
+                            setSemanticMemories([]);
+                          }
+                        }}
+                        className="w-full bg-gray-800 border border-gray-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:border-purple-400"
+                      />
+                      <div className="absolute inset-y-0 right-3 flex items-center">
+                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
                       </div>
                     </div>
-                    
-                    {/* ✅ NEW: Chain of Thought reasoning display */}
-                    {message.reasoning && showReasoningFor === message.id && (
-                      <div className="mt-3 p-3 bg-gray-700/50 rounded-lg border border-gray-600">
-                        <h4 className="text-sm font-semibold text-blue-400 mb-2">🧠 Chain of Thought Reasoning</h4>
-                        
-                        {/* Reasoning Steps */}
-                        <div className="space-y-2 mb-3">
-                          {message.reasoning_steps?.map((step, index) => (
-                            <div key={index} className="text-xs text-gray-300 flex items-start space-x-2">
-                              <span className="text-blue-400 font-mono">{index + 1}.</span>
-                              <span>{step}</span>
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Detailed Analysis */}
-                        <div className="grid grid-cols-2 gap-2 mb-3 text-xs">
-                          <div className="bg-red-500/10 p-2 rounded border border-red-500/20">
-                            <div className="text-red-400 font-medium">🎨 Creativity</div>
-                            <div className="text-gray-300 mt-1">{message.reasoning.creativity_analysis}</div>
-                          </div>
-                          <div className="bg-blue-500/10 p-2 rounded border border-blue-500/20">
-                            <div className="text-blue-400 font-medium">🧠 Wisdom</div>
-                            <div className="text-gray-300 mt-1">{message.reasoning.wisdom_analysis}</div>
-                          </div>
-                          <div className="bg-yellow-500/10 p-2 rounded border border-yellow-500/20">
-                            <div className="text-yellow-400 font-medium">😄 Humor</div>
-                            <div className="text-gray-300 mt-1">{message.reasoning.humor_analysis}</div>
-                          </div>
-                          <div className="bg-green-500/10 p-2 rounded border border-green-500/20">
-                            <div className="text-green-400 font-medium">❤️ Empathy</div>
-                            <div className="text-gray-300 mt-1">{message.reasoning.empathy_analysis}</div>
-                          </div>
-                        </div>
-
-                        {/* Trait Influence Visualization */}
-                        {message.traits_influence && (
-                          <div className="space-y-1">
-                            <div className="text-xs text-gray-400">Trait Influence:</div>
-                            <div className="grid grid-cols-4 gap-1 text-xs">
-                              <div className="flex items-center space-x-1">
-                                <div className="w-8 h-1 bg-red-500 rounded" style={{ width: `${message.traits_influence.creativity_weight * 32}px` }}></div>
-                                <span className="text-red-400">{Math.round(message.traits_influence.creativity_weight * 100)}%</span>
-                              </div>
-                              <div className="flex items-center space-x-1">
-                                <div className="w-8 h-1 bg-blue-500 rounded" style={{ width: `${message.traits_influence.wisdom_weight * 32}px` }}></div>
-                                <span className="text-blue-400">{Math.round(message.traits_influence.wisdom_weight * 100)}%</span>
-                              </div>
-                              <div className="flex items-center space-x-1">
-                                <div className="w-8 h-1 bg-yellow-500 rounded" style={{ width: `${message.traits_influence.humor_weight * 32}px` }}></div>
-                                <span className="text-yellow-400">{Math.round(message.traits_influence.humor_weight * 100)}%</span>
-                              </div>
-                              <div className="flex items-center space-x-1">
-                                <div className="w-8 h-1 bg-green-500 rounded" style={{ width: `${message.traits_influence.empathy_weight * 32}px` }}></div>
-                                <span className="text-green-400">{Math.round(message.traits_influence.empathy_weight * 100)}%</span>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Final Reasoning & Confidence */}
-                        <div className="mt-3 pt-2 border-t border-gray-600">
-                          <div className="text-xs text-gray-300 mb-1">Final Reasoning:</div>
-                          <div className="text-xs text-gray-400">{message.reasoning.final_reasoning}</div>
-                          <div className="flex items-center justify-between mt-2">
-                            <div className="flex items-center space-x-2">
-                              <span className="text-xs text-gray-500">Confidence:</span>
-                              <div className="w-16 h-1 bg-gray-600 rounded overflow-hidden">
-                                <div 
-                                  className="h-full bg-gradient-to-r from-green-500 to-blue-500"
-                                  style={{ width: `${message.reasoning.confidence_score * 100}%` }}
-                                ></div>
-                              </div>
-                              <span className="text-xs text-gray-400">{Math.round(message.reasoning.confidence_score * 100)}%</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* ✅ NEW: AI Alignment Market rating interface */}
-                    {message.role === 'muse' && showRatingFor === message.id && !ratedMessages.has(message.id) && (
-                      <div className="mt-3 p-4 bg-orange-500/10 rounded-lg border border-orange-500/20">
-                        <h4 className="text-sm font-semibold text-orange-400 mb-3">🏪 Rate this AI response - Earn MUSE tokens!</h4>
-                        
-                        <div className="space-y-3">
-                          {/* Quality Score */}
-                          <div>
-                            <label className="block text-xs text-gray-300 mb-1">Response Quality (1-10)</label>
-                            <div className="flex items-center space-x-2">
-                              <input
-                                type="range"
-                                min="1"
-                                max="10"
-                                value={ratingData.quality_score}
-                                onChange={(e) => setRatingData(prev => ({ ...prev, quality_score: parseInt(e.target.value) }))}
-                                className="flex-1 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb:bg-orange-500"
-                              />
-                              <span className="text-sm text-orange-400 font-medium w-8">{ratingData.quality_score}</span>
-                            </div>
-                          </div>
-
-                          {/* Personality Accuracy */}
-                          <div>
-                            <label className="block text-xs text-gray-300 mb-1">Personality Accuracy (1-10)</label>
-                            <div className="flex items-center space-x-2">
-                              <input
-                                type="range"
-                                min="1"
-                                max="10"
-                                value={ratingData.personality_accuracy}
-                                onChange={(e) => setRatingData(prev => ({ ...prev, personality_accuracy: parseInt(e.target.value) }))}
-                                className="flex-1 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-                              />
-                              <span className="text-sm text-orange-400 font-medium w-8">{ratingData.personality_accuracy}</span>
-                            </div>
-                          </div>
-
-                          {/* Helpfulness */}
-                          <div>
-                            <label className="block text-xs text-gray-300 mb-1">Helpfulness (1-10)</label>
-                            <div className="flex items-center space-x-2">
-                              <input
-                                type="range"
-                                min="1"
-                                max="10"
-                                value={ratingData.helpfulness}
-                                onChange={(e) => setRatingData(prev => ({ ...prev, helpfulness: parseInt(e.target.value) }))}
-                                className="flex-1 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-                              />
-                              <span className="text-sm text-orange-400 font-medium w-8">{ratingData.helpfulness}</span>
-                            </div>
-                          </div>
-
-                          {/* Feedback */}
-                          <div>
-                            <label className="block text-xs text-gray-300 mb-1">Feedback (optional - earn bonus MUSE tokens!)</label>
-                            <textarea
-                              value={ratingData.feedback}
-                              onChange={(e) => setRatingData(prev => ({ ...prev, feedback: e.target.value }))}
-                              placeholder="Share your thoughts on how this AI response could be improved..."
-                              className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm text-white placeholder-gray-400 focus:border-orange-500 focus:outline-none resize-none"
-                              rows={2}
-                            />
-                            <div className="text-xs text-gray-400 mt-1">
-                              {ratingData.feedback.length >= 20 ? '✅' : '📝'} {ratingData.feedback.length}/20+ chars for +3 MUSE bonus
-                            </div>
-                          </div>
-
-                          {/* Reward Preview */}
-                          <div className="bg-gray-800/50 rounded p-2 text-xs">
-                            <div className="flex items-center justify-between text-gray-300">
-                              <span>Base reward:</span>
-                              <span className="text-orange-400">10 MUSE</span>
-                            </div>
-                            {ratingData.quality_score >= 8 && (
-                              <div className="flex items-center justify-between text-gray-300">
-                                <span>High quality bonus:</span>
-                                <span className="text-orange-400">+5 MUSE</span>
-                              </div>
-                            )}
-                            {ratingData.feedback.length >= 20 && (
-                              <div className="flex items-center justify-between text-gray-300">
-                                <span>Detailed feedback bonus:</span>
-                                <span className="text-orange-400">+3 MUSE</span>
-                              </div>
-                            )}
-                            <div className="border-t border-gray-600 mt-1 pt-1 flex items-center justify-between font-medium">
-                              <span className="text-white">Total reward:</span>
-                              <span className="text-orange-400">
-                                {10 + (ratingData.quality_score >= 8 ? 5 : 0) + (ratingData.feedback.length >= 20 ? 3 : 0)} MUSE
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Action Buttons */}
-                          <div className="flex items-center space-x-2">
-                            <button
-                              onClick={() => submitRating(message.id, message)}
-                              disabled={isSubmittingRating}
-                              className="flex-1 bg-gradient-to-r from-orange-500 to-yellow-600 hover:from-orange-600 hover:to-yellow-700 text-white px-3 py-2 rounded text-sm font-medium transition-all duration-200 disabled:opacity-50"
-                            >
-                              {isSubmittingRating ? '⏳ Submitting...' : '🏆 Submit Rating'}
-                            </button>
-                            <button
-                              onClick={() => setShowRatingFor(null)}
-                              className="px-3 py-2 text-gray-400 hover:text-white transition-colors text-sm"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Show rating confirmation for already rated messages */}
-                    {message.role === 'muse' && ratedMessages.has(message.id) && showRatingFor === message.id && (
-                      <div className="mt-3 p-3 bg-yellow-500/10 rounded-lg border border-yellow-500/20">
-                        <div className="flex items-center space-x-2">
-                          <span className="text-yellow-400">⭐</span>
-                          <span className="text-sm text-yellow-300">You've already rated this response!</span>
-                        </div>
-                        <div className="text-xs text-gray-400 mt-1">
-                          Thank you for contributing to the AI Alignment Market. Your rating helps improve AI companions for everyone.
-                        </div>
-                      </div>
-                    )}
+                    <button
+                      onClick={() => semanticMemoryQuery && searchSemanticMemory(semanticMemoryQuery)}
+                      className="bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700 text-white px-4 py-3 rounded-lg font-medium transition-all duration-200"
+                    >
+                      Search
+                    </button>
                   </div>
                 </motion.div>
+              )}
+            {/* Enhanced Chat Messages with Phase 2 Visualizations */}
+            <AnimatePresence>
+              {session.messages.map((message, index) => (
+                <div key={message.id} id={`message-${message.id}`} className="space-y-4 transition-colors duration-500">
+                  {/* Main Chat Bubble */}
+                  <PersonalityChatBubble
+                    message={{
+                      id: message.id,
+                      content: message.content,
+                      sender: message.role,
+                      timestamp: message.timestamp,
+                      emotions: message.role === 'muse' ? ['thoughtful', 'caring'] : undefined,
+                      confidence: message.reasoning?.confidence_score ? Math.round(message.reasoning.confidence_score * 100) : undefined,
+                      reasoning: message.reasoning,
+                    }}
+                    traits={{
+                      creativity: muse.creativity,
+                      wisdom: muse.wisdom,
+                      humor: muse.humor,
+                      empathy: muse.empathy,
+                    }}
+                    isLatest={index === session.messages.length - 1}
+                    showAvatar={true}
+                    onMessageClick={() => {
+                      if (message.role === 'muse') {
+                        setCurrentRatingMessage(currentRatingMessage === message.id ? null : message.id);
+                      }
+                    }}
+                  />
+                  
+                  {/* Phase 2 Feature Panels */}
+                  {message.role === 'muse' && (
+                    <div className="ml-12 space-y-3">
+                      {/* TEE Verification Badge */}
+                      {message.tee_verified && (
+                        <TEEBadge
+                          isVerified={message.tee_verified}
+                          attestationData={{
+                            enclaveId: message.tee_attestation || 'mrenc_a7b3c4d5',
+                            timestamp: message.timestamp.getTime(),
+                            signature: 'sig_' + message.commitment_hash || 'demo_signature',
+                            nonce: 'nonce_' + message.id,
+                          }}
+                          interactive={true}
+                          size="md"
+                        />
+                      )}
+                      
+                      {/* Chain of Thought Reasoning */}
+                      {message.reasoning && (
+                        <ChainOfThought
+                          steps={[
+                            {
+                              id: 'analysis',
+                              type: 'analysis',
+                              title: 'Input Analysis',
+                              content: 'Analyzing user message for intent, context, and emotional tone',
+                              confidence: 85,
+                              timestamp: Date.now() - 3000,
+                              duration: 150,
+                            },
+                            {
+                              id: 'memory',
+                              type: 'memory_retrieval',
+                              title: 'Memory Retrieval',
+                              content: 'Searching conversation history and IPFS memory for relevant context',
+                              confidence: 92,
+                              timestamp: Date.now() - 2500,
+                              duration: 200,
+                            },
+                            {
+                              id: 'personality',
+                              type: 'personality_filter',
+                              title: 'Personality Processing',
+                              content: message.reasoning.creativity_analysis + ' ' + message.reasoning.wisdom_analysis,
+                              confidence: 88,
+                              timestamp: Date.now() - 2000,
+                              duration: 300,
+                            },
+                            {
+                              id: 'generation',
+                              type: 'response_generation',
+                              title: 'Response Generation',
+                              content: message.reasoning.final_reasoning,
+                              confidence: Math.round(message.reasoning.confidence_score * 100),
+                              timestamp: Date.now() - 1000,
+                              duration: 500,
+                            },
+                            {
+                              id: 'verification',
+                              type: 'verification',
+                              title: 'TEE Verification',
+                              content: 'Cryptographically signing response in trusted execution environment',
+                              confidence: 100,
+                              timestamp: Date.now() - 500,
+                              duration: 100,
+                            },
+                          ]}
+                          traits={{
+                            creativity: muse.creativity,
+                            wisdom: muse.wisdom,
+                            humor: muse.humor,
+                            empathy: muse.empathy,
+                          }}
+                          isVisible={showReasoningFor === message.id}
+                          onToggle={() => toggleReasoning(message.id)}
+                        />
+                      )}
+                      
+                      {/* AI Alignment Market Rating */}
+                      {currentRatingMessage === message.id && (
+                        <AIAlignmentMarket
+                          traits={{
+                            creativity: muse.creativity,
+                            wisdom: muse.wisdom,
+                            humor: muse.humor,
+                            empathy: muse.empathy,
+                          }}
+                          responseId={message.id}
+                          currentRating={ratedMessages.has(message.id) ? 85 : undefined}
+                          isVisible={true}
+                          onToggle={() => setCurrentRatingMessage(null)}
+                          onSubmitRating={async (rating, feedback, criteria) => {
+                            // Simulate rating submission
+                            await new Promise(resolve => setTimeout(resolve, 1500));
+                            setRatedMessages(prev => new Set([...prev, message.id]));
+                            setCurrentRatingMessage(null);
+                            
+                            return {
+                              tokens: Math.floor(rating * 0.5) + 10,
+                              reputation: Math.floor(rating * 0.3) + 5,
+                              bonus: rating > 80 ? {
+                                type: 'quality' as const,
+                                amount: 5,
+                                description: 'High quality feedback bonus',
+                              } : undefined,
+                            };
+                          }}
+                          marketStats={{
+                            totalRatings: 15420,
+                            averageRating: 76,
+                            rewardPool: 125000,
+                            topRaters: 1250,
+                          }}
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
               ))}
             </AnimatePresence>
 

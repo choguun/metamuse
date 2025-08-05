@@ -1,0 +1,1 @@
+export { MuseAvatar } from './MuseAvatar';

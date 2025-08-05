@@ -7,6 +7,8 @@ set -e
 
 echo "🚀 MetaMuse Smart Contract Deployment to Metis Hyperion Testnet"
 echo "================================================================="
+echo "Deploying 5 contracts including the new AI Alignment Market..."
+echo ""
 
 # Colors for output
 RED='\033[0;31m'
@@ -73,13 +75,13 @@ echo -e "${BLUE}Balance: ${YELLOW}$BALANCE_ETH tMETIS${NC}"
 # Convert balance to a number for comparison (remove decimal part)
 BALANCE_INT=$(echo $BALANCE_ETH | cut -d'.' -f1)
 
-# if [ -z "$BALANCE_INT" ] || [ "$BALANCE_INT" -lt 1 ]; then
-#     echo -e "${RED}❌ Insufficient balance. You need at least 1 tMETIS for deployment${NC}"
-#     echo -e "${YELLOW}Get testnet tokens from Metis faucet or Discord${NC}"
-#     exit 1
-# fi
-
-echo -e "${GREEN}✅ Sufficient balance for deployment${NC}"
+# Check if balance is sufficient (need at least 2 tMETIS for 5 contracts deployment)
+if [ -z "$BALANCE_INT" ] || [ "$BALANCE_INT" -lt 2 ]; then
+    echo -e "${YELLOW}⚠️  Balance is low. Deployment requires ~3.0M gas (~2 tMETIS)${NC}"
+    echo -e "${YELLOW}Get testnet tokens from Metis faucet or Discord if deployment fails${NC}"
+else
+    echo -e "${GREEN}✅ Sufficient balance for deployment${NC}"
+fi
 
 # Build contracts
 echo -e "${BLUE}Building contracts...${NC}"
@@ -100,9 +102,12 @@ echo -e "${BLUE}Deploying contracts to Metis Hyperion Testnet...${NC}"
 echo -e "${YELLOW}Network: $NETWORK_NAME${NC}"
 echo -e "${YELLOW}Chain ID: $CHAIN_ID${NC}"
 echo -e "${YELLOW}RPC URL: $RPC_URL${NC}"
+echo -e "${YELLOW}Deploying: MetaMuse, CommitmentVerifier, MuseMemory, MusePlugins, MuseRating${NC}"
+echo -e "${YELLOW}Expected gas usage: ~3.0M gas${NC}"
 echo ""
 
 # Run deployment script
+echo -e "${BLUE}Running Foundry deployment script...${NC}"
 forge script script/DeployHyperion.s.sol \
     --rpc-url $RPC_URL \
     --private-key $PRIVATE_KEY \
@@ -124,6 +129,15 @@ if [ $DEPLOY_EXIT_CODE -eq 0 ]; then
         done
         echo ""
         
+        # Validate that all 5 contracts were deployed
+        CONTRACT_COUNT=$(grep -c "CONTRACT=" deployments/hyperion-testnet.env)
+        if [ "$CONTRACT_COUNT" -eq 5 ]; then
+            echo -e "${GREEN}✅ All 5 contracts deployed successfully${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Expected 5 contracts, found $CONTRACT_COUNT${NC}"
+        fi
+        echo ""
+        
         # Copy deployment addresses to backend and frontend
         echo -e "${BLUE}Updating backend and frontend configurations...${NC}"
         
@@ -138,15 +152,17 @@ if [ $DEPLOY_EXIT_CODE -eq 0 ]; then
                 sed -i '' "s/COMMITMENT_VERIFIER_ADDRESS=.*/COMMITMENT_VERIFIER_ADDRESS=$COMMITMENT_VERIFIER_CONTRACT/" ../metamuse-api/.env
                 sed -i '' "s/MUSE_MEMORY_CONTRACT_ADDRESS=.*/MUSE_MEMORY_CONTRACT_ADDRESS=$MUSE_MEMORY_CONTRACT/" ../metamuse-api/.env
                 sed -i '' "s/MUSE_PLUGINS_CONTRACT_ADDRESS=.*/MUSE_PLUGINS_CONTRACT_ADDRESS=$MUSE_PLUGINS_CONTRACT/" ../metamuse-api/.env
+                sed -i '' "s/MUSE_RATING_CONTRACT_ADDRESS=.*/MUSE_RATING_CONTRACT_ADDRESS=$MUSE_RATING_CONTRACT/" ../metamuse-api/.env
             else
                 # Linux
                 sed -i "s/METAMUSE_CONTRACT_ADDRESS=.*/METAMUSE_CONTRACT_ADDRESS=$METAMUSE_CONTRACT/" ../metamuse-api/.env
                 sed -i "s/COMMITMENT_VERIFIER_ADDRESS=.*/COMMITMENT_VERIFIER_ADDRESS=$COMMITMENT_VERIFIER_CONTRACT/" ../metamuse-api/.env
                 sed -i "s/MUSE_MEMORY_CONTRACT_ADDRESS=.*/MUSE_MEMORY_CONTRACT_ADDRESS=$MUSE_MEMORY_CONTRACT/" ../metamuse-api/.env
                 sed -i "s/MUSE_PLUGINS_CONTRACT_ADDRESS=.*/MUSE_PLUGINS_CONTRACT_ADDRESS=$MUSE_PLUGINS_CONTRACT/" ../metamuse-api/.env
+                sed -i "s/MUSE_RATING_CONTRACT_ADDRESS=.*/MUSE_RATING_CONTRACT_ADDRESS=$MUSE_RATING_CONTRACT/" ../metamuse-api/.env
             fi
             
-            echo -e "${GREEN}✅ Backend configuration updated${NC}"
+            echo -e "${GREEN}✅ Backend configuration updated (5 contracts)${NC}"
         else
             echo -e "${YELLOW}⚠️  Backend .env not found, create it from .env.example${NC}"
         fi
@@ -162,15 +178,17 @@ if [ $DEPLOY_EXIT_CODE -eq 0 ]; then
                 sed -i '' "s/NEXT_PUBLIC_COMMITMENT_VERIFIER_CONTRACT=.*/NEXT_PUBLIC_COMMITMENT_VERIFIER_CONTRACT=$COMMITMENT_VERIFIER_CONTRACT/" ../metamuse-web/.env.local
                 sed -i '' "s/NEXT_PUBLIC_MUSE_MEMORY_CONTRACT=.*/NEXT_PUBLIC_MUSE_MEMORY_CONTRACT=$MUSE_MEMORY_CONTRACT/" ../metamuse-web/.env.local
                 sed -i '' "s/NEXT_PUBLIC_MUSE_PLUGINS_CONTRACT=.*/NEXT_PUBLIC_MUSE_PLUGINS_CONTRACT=$MUSE_PLUGINS_CONTRACT/" ../metamuse-web/.env.local
+                sed -i '' "s/NEXT_PUBLIC_MUSE_RATING_CONTRACT=.*/NEXT_PUBLIC_MUSE_RATING_CONTRACT=$MUSE_RATING_CONTRACT/" ../metamuse-web/.env.local
             else
                 # Linux
                 sed -i "s/NEXT_PUBLIC_METAMUSE_CONTRACT=.*/NEXT_PUBLIC_METAMUSE_CONTRACT=$METAMUSE_CONTRACT/" ../metamuse-web/.env.local
                 sed -i "s/NEXT_PUBLIC_COMMITMENT_VERIFIER_CONTRACT=.*/NEXT_PUBLIC_COMMITMENT_VERIFIER_CONTRACT=$COMMITMENT_VERIFIER_CONTRACT/" ../metamuse-web/.env.local
                 sed -i "s/NEXT_PUBLIC_MUSE_MEMORY_CONTRACT=.*/NEXT_PUBLIC_MUSE_MEMORY_CONTRACT=$MUSE_MEMORY_CONTRACT/" ../metamuse-web/.env.local
                 sed -i "s/NEXT_PUBLIC_MUSE_PLUGINS_CONTRACT=.*/NEXT_PUBLIC_MUSE_PLUGINS_CONTRACT=$MUSE_PLUGINS_CONTRACT/" ../metamuse-web/.env.local
+                sed -i "s/NEXT_PUBLIC_MUSE_RATING_CONTRACT=.*/NEXT_PUBLIC_MUSE_RATING_CONTRACT=$MUSE_RATING_CONTRACT/" ../metamuse-web/.env.local
             fi
             
-            echo -e "${GREEN}✅ Frontend configuration updated${NC}"
+            echo -e "${GREEN}✅ Frontend configuration updated (5 contracts)${NC}"
         else
             echo -e "${YELLOW}⚠️  Frontend .env.local not found, create it from .env.local.example${NC}"
         fi
@@ -189,15 +207,28 @@ echo ""
 echo -e "${GREEN}🎉 MetaMuse Deployment Complete!${NC}"
 echo "=================================="
 echo ""
+echo -e "${BLUE}📋 Deployed Contracts (5):${NC}"
+echo -e "${GREEN}  ✅ MetaMuse NFT - AI Companion Creation${NC}"
+echo -e "${GREEN}  ✅ CommitmentVerifier - Cryptographic Verification${NC}"
+echo -e "${GREEN}  ✅ MuseMemory - IPFS Memory Storage${NC}"
+echo -e "${GREEN}  ✅ MusePlugins - Plugin Marketplace${NC}"
+echo -e "${GREEN}  ✅ MuseRating - AI Alignment Market (NEW!)${NC}"
+echo ""
 echo -e "${BLUE}🌐 Network Details:${NC}"
 echo -e "${YELLOW}  Network: $NETWORK_NAME${NC}"
 echo -e "${YELLOW}  Chain ID: $CHAIN_ID${NC}"
 echo -e "${YELLOW}  RPC: $RPC_URL${NC}"
 echo -e "${YELLOW}  Explorer: $EXPLORER_URL${NC}"
 echo ""
+echo -e "${BLUE}🚀 New Features Available:${NC}"
+echo -e "${GREEN}  🏆 AI Alignment Market - Rate AI interactions & earn MUSE tokens${NC}"
+echo -e "${GREEN}  💰 Token Rewards - 10+ MUSE tokens per quality rating${NC}"
+echo -e "${GREEN}  📊 Community Metrics - Track muse performance across the platform${NC}"
+echo -e "${GREEN}  🔍 Quality Scoring - Rate quality, personality accuracy, helpfulness${NC}"
+echo ""
 echo -e "${BLUE}🚀 Next Steps:${NC}"
 echo -e "${YELLOW}  1. Start the backend API:${NC}"
-echo -e "${YELLOW}     cd ../metamuse-api && cargo run${NC}"
+echo -e "${YELLOW}     cd ../metamuse-api && cargo run --bin metamuse-api${NC}"
 echo ""
 echo -e "${YELLOW}  2. Start the frontend:${NC}"
 echo -e "${YELLOW}     cd ../metamuse-web && npm run dev${NC}"
@@ -208,4 +239,7 @@ echo ""
 echo -e "${YELLOW}  4. Get testnet tMETIS tokens if you need more:${NC}"
 echo -e "${YELLOW}     Join Metis Discord and request testnet tokens${NC}"
 echo ""
-echo -e "${GREEN}Happy building with MetaMuse! 🛠️${NC}"
+echo -e "${YELLOW}  5. Try the new AI Alignment Market:${NC}"
+echo -e "${YELLOW}     Chat with muses and rate their responses to earn MUSE tokens!${NC}"
+echo ""
+echo -e "${GREEN}Happy building with MetaMuse! 🛠️✨${NC}"

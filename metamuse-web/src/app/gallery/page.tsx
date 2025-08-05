@@ -2,11 +2,170 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useAccount } from 'wagmi';
 import { motion } from 'framer-motion';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { type MuseData } from '@/types';
 import { PERSONALITY_COLORS, API_BASE_URL } from '@/constants';
+import { MuseAvatar } from '@/components/avatars/MuseAvatar';
+import { ThemedContainer } from '@/components/ui/themed/ThemedContainer';
+import { usePersonalityTheme } from '@/hooks/usePersonalityTheme';
+
+// Separate component to avoid hook violations in map
+function MuseCard({ muse, index, getPersonalityDescription }: { 
+  muse: MuseData; 
+  index: number; 
+  getPersonalityDescription: (muse: MuseData) => any;
+}) {
+  const router = useRouter();
+  const traits = {
+    creativity: muse.creativity,
+    wisdom: muse.wisdom,
+    humor: muse.humor,
+    empathy: muse.empathy,
+  };
+  const theme = usePersonalityTheme(traits);
+  const dominant = getPersonalityDescription(muse);
+  
+  const handleViewDetails = () => {
+    // Navigate to a details page or show detailed info
+    router.push(`/muse/${muse.token_id}`);
+  };
+  
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 30 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.6, delay: index * 0.1 }}
+    >
+      <ThemedContainer
+        traits={traits}
+        variant="glass"
+        intensity="normal"
+        animated={true}
+        interactive={true}
+        className="overflow-hidden group hover:scale-[1.02] transition-transform duration-200"
+      >
+        {/* Muse Header */}
+        <div className="relative pb-4">
+          <div className="flex items-start justify-between mb-6">
+            <MuseAvatar
+              traits={traits}
+              tokenId={muse.token_id}
+              size="lg"
+              interactive={true}
+              showPersonality={true}
+              showGlow={true}
+            />
+            <div className="text-right">
+              <div className="text-sm text-gray-400">Interactions</div>
+              <div className="text-lg font-semibold text-white">{muse.total_interactions}</div>
+            </div>
+          </div>
+          
+          <div className="mb-4">
+            <h3 className="text-xl font-semibold text-white mb-2">
+              Muse #{muse.token_id}
+            </h3>
+            <p className="text-gray-300 text-sm mb-2">
+              {theme.description}
+            </p>
+            <p className="text-gray-400 text-xs">
+              {theme.name} • Born at block {muse.birth_block}
+            </p>
+          </div>
+        </div>
+
+        {/* Enhanced Personality Bars */}
+        <div className="space-y-4 mb-6">
+          {[
+            { name: 'Creativity', value: muse.creativity, color: theme.gradient[0] || theme.primary },
+            { name: 'Wisdom', value: muse.wisdom, color: theme.gradient[1] || theme.secondary },
+            { name: 'Humor', value: muse.humor, color: theme.gradient[2] || theme.accent },
+            { name: 'Empathy', value: muse.empathy, color: theme.gradient[3] || theme.primary },
+          ].map((trait, traitIndex) => (
+            <motion.div 
+              key={trait.name} 
+              className="flex items-center justify-between"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: index * 0.1 + traitIndex * 0.05 }}
+            >
+              <span className="text-sm text-gray-300 font-medium">{trait.name}</span>
+              <div className="flex items-center space-x-3">
+                <div className="w-24 h-2 bg-gray-700/50 rounded-full overflow-hidden relative">
+                  <motion.div
+                    className="h-full rounded-full relative"
+                    style={{
+                      backgroundColor: trait.color,
+                      background: `linear-gradient(90deg, ${trait.color}80, ${trait.color})`,
+                    }}
+                    initial={{ width: 0 }}
+                    animate={{ width: `${trait.value}%` }}
+                    transition={{ delay: index * 0.1 + traitIndex * 0.1 + 0.5, duration: 0.8, ease: "easeOut" }}
+                  />
+                  {/* Glow effect for high values */}
+                  {trait.value > 70 && (
+                    <motion.div
+                      className="absolute inset-0 rounded-full"
+                      style={{
+                        background: `linear-gradient(90deg, transparent, ${trait.color}40, transparent)`,
+                        boxShadow: `0 0 8px ${trait.color}60`,
+                      }}
+                      animate={{
+                        opacity: [0.5, 1, 0.5],
+                      }}
+                      transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                    />
+                  )}
+                </div>
+                <span 
+                  className="text-sm font-bold w-8 text-center"
+                  style={{ color: trait.color }}
+                >
+                  {trait.value}
+                </span>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+
+        {/* Enhanced Actions */}
+        <div className="flex space-x-3">
+          <Link
+            href={`/chat/${muse.token_id}`}
+            className="flex-1 text-center py-3 px-4 rounded-lg text-sm font-semibold transition-all duration-200 hover:scale-105 text-white"
+            style={{
+              background: theme.getGradientBackground(),
+              boxShadow: `0 4px 12px ${theme.getPrimaryWithOpacity(0.3)}`,
+            }}
+          >
+            💬 Chat
+          </Link>
+          <button 
+            onClick={handleViewDetails}
+            className="flex-1 py-3 px-4 rounded-lg text-sm font-semibold transition-all duration-200 hover:scale-105 border text-gray-300 hover:text-white cursor-pointer"
+            style={{
+              borderColor: theme.primary,
+              color: theme.primary,
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = theme.getPrimaryWithOpacity(0.1);
+              e.currentTarget.style.color = 'white';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent';
+              e.currentTarget.style.color = theme.primary;
+            }}
+          >
+            ⚙️ Details
+          </button>
+        </div>
+      </ThemedContainer>
+    </motion.div>
+  );
+}
 
 export default function Gallery() {
   const { isConnected, address } = useAccount();
@@ -148,85 +307,9 @@ export default function Gallery() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {muses.map((muse, index) => {
-              const dominant = getPersonalityDescription(muse);
-              return (
-                <motion.div
-                  key={muse.token_id}
-                  className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 hover:border-purple-500/50 transition-all duration-200 overflow-hidden group"
-                  initial={{ opacity: 0, y: 30 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.6, delay: index * 0.1 }}
-                  whileHover={{ scale: 1.02 }}
-                >
-                  {/* Muse Header */}
-                  <div className="relative p-6 pb-4">
-                    <div className="flex items-start justify-between mb-4">
-                      <div
-                        className="w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-xl"
-                        style={{ backgroundColor: dominant.color }}
-                      >
-                        #{muse.token_id}
-                      </div>
-                      <div className="text-right">
-                        <div className="text-sm text-gray-400">Interactions</div>
-                        <div className="text-lg font-semibold text-white">{muse.total_interactions}</div>
-                      </div>
-                    </div>
-                    
-                    <h3 className="text-xl font-semibold text-white mb-2">
-                      Muse #{muse.token_id}
-                    </h3>
-                    <p className="text-gray-400 text-sm">
-                      Primarily {dominant.name.toLowerCase()} • Born at block {muse.birth_block}
-                    </p>
-                  </div>
-
-                  {/* Personality Bars */}
-                  <div className="px-6 pb-4">
-                    <div className="space-y-3">
-                      {[
-                        { name: 'Creativity', value: muse.creativity, color: PERSONALITY_COLORS.creativity },
-                        { name: 'Wisdom', value: muse.wisdom, color: PERSONALITY_COLORS.wisdom },
-                        { name: 'Humor', value: muse.humor, color: PERSONALITY_COLORS.humor },
-                        { name: 'Empathy', value: muse.empathy, color: PERSONALITY_COLORS.empathy },
-                      ].map((trait) => (
-                        <div key={trait.name} className="flex items-center justify-between">
-                          <span className="text-xs text-gray-400">{trait.name}</span>
-                          <div className="flex items-center space-x-2">
-                            <div className="w-20 h-1.5 bg-gray-700 rounded-full overflow-hidden">
-                              <div
-                                className="h-full transition-all duration-300"
-                                style={{
-                                  width: `${trait.value}%`,
-                                  backgroundColor: trait.color,
-                                }}
-                              />
-                            </div>
-                            <span className="text-xs text-white w-6">{trait.value}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="px-6 pb-6">
-                    <div className="flex space-x-3">
-                      <Link
-                        href={`/chat/${muse.token_id}`}
-                        className="flex-1 bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700 text-white py-2 px-4 rounded-lg text-sm font-medium text-center transition-all duration-200"
-                      >
-                        Chat
-                      </Link>
-                      <button className="flex-1 border border-gray-600 hover:border-gray-500 text-gray-300 hover:text-white py-2 px-4 rounded-lg text-sm font-medium transition-all duration-200">
-                        Details
-                      </button>
-                    </div>
-                  </div>
-                </motion.div>
-              );
-            })}
+            {muses.map((muse, index) => (
+              <MuseCard key={muse.token_id} muse={muse} index={index} getPersonalityDescription={getPersonalityDescription} />
+            ))}
           </div>
         )}
 

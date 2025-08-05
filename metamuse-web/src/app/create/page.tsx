@@ -8,6 +8,9 @@ import { METAMUSE_ABI, CONTRACTS, PERSONALITY_COLORS, TRAIT_DESCRIPTIONS, API_BA
 import { type MuseTraits } from '@/types';
 import { PersonalitySlider } from '@/components/ui/PersonalitySlider';
 import { MusePreview } from '@/components/ui/MusePreview';
+import { MuseAvatar } from '@/components/avatars/MuseAvatar';
+import { ThemedContainer } from '@/components/ui/themed/ThemedContainer';
+import { usePersonalityTheme } from '@/hooks/usePersonalityTheme';
 
 export default function CreateMuse() {
   const { isConnected, address } = useAccount();
@@ -20,6 +23,9 @@ export default function CreateMuse() {
   });
   const [isCreating, setIsCreating] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  
+  // Initialize personality theme at top level to avoid hook violations
+  const personalityTheme = usePersonalityTheme(traits);
 
   const { writeContract, data: hash, isPending } = useWriteContract();
   
@@ -234,56 +240,163 @@ export default function CreateMuse() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* Personality Overview */}
-              <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700">
-                <h3 className="text-xl font-semibold text-white mb-6">Personality Profile</h3>
+              {/* Enhanced Personality Overview */}
+              <ThemedContainer
+                traits={traits}
+                variant="glass"
+                intensity="normal"
+                animated={true}
+              >
+                <div className="text-center mb-6">
+                  <MuseAvatar
+                    traits={traits}
+                    tokenId="preview"
+                    size="xl"
+                    interactive={true}
+                    showPersonality={true}
+                    showGlow={true}
+                    className="mx-auto mb-4"
+                  />
+                  <h3 className="text-xl font-semibold text-white mb-2">
+                    {personalityTheme.name}
+                  </h3>
+                  <p className="text-gray-300 text-sm">
+                    {personalityTheme.description}
+                  </p>
+                </div>
+                
                 <div className="space-y-4">
-                  {Object.entries(traits).map(([trait, value]) => (
-                    <div key={trait} className="flex items-center justify-between">
-                      <span className="text-gray-300 capitalize">{trait}</span>
-                      <div className="flex items-center space-x-3">
-                        <div className="w-32 h-2 bg-gray-700 rounded-full overflow-hidden">
-                          <div
-                            className="h-full transition-all duration-300"
-                            style={{
-                              width: `${value}%`,
-                              backgroundColor: PERSONALITY_COLORS[trait as keyof typeof PERSONALITY_COLORS],
-                            }}
-                          />
+                  {Object.entries(traits).map(([trait, value]) => {
+                    const traitColor = personalityTheme.gradient[Object.keys(traits).indexOf(trait)] || personalityTheme.primary;
+                    
+                    return (
+                      <motion.div 
+                        key={trait} 
+                        className="flex items-center justify-between"
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: Object.keys(traits).indexOf(trait) * 0.1 }}
+                      >
+                        <span className="text-gray-300 capitalize font-medium">{trait}</span>
+                        <div className="flex items-center space-x-3">
+                          <div className="w-32 h-2.5 bg-gray-700/50 rounded-full overflow-hidden relative">
+                            <motion.div
+                              className="h-full rounded-full"
+                              style={{
+                                backgroundColor: traitColor,
+                                background: `linear-gradient(90deg, ${traitColor}80, ${traitColor})`,
+                              }}
+                              initial={{ width: 0 }}
+                              animate={{ width: `${value}%` }}
+                              transition={{ delay: Object.keys(traits).indexOf(trait) * 0.1 + 0.5, duration: 0.8, ease: "easeOut" }}
+                            />
+                            {/* Glow effect for high values */}
+                            {value > 70 && (
+                              <motion.div
+                                className="absolute inset-0 rounded-full"
+                                style={{
+                                  background: `linear-gradient(90deg, transparent, ${traitColor}40, transparent)`,
+                                  boxShadow: `0 0 8px ${traitColor}60`,
+                                }}
+                                animate={{
+                                  opacity: [0.5, 1, 0.5],
+                                }}
+                                transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                              />
+                            )}
+                          </div>
+                          <span 
+                            className="text-white font-bold w-8 text-center"
+                            style={{ color: traitColor }}
+                          >
+                            {value}
+                          </span>
                         </div>
-                        <span className="text-white font-semibold w-8">{value}</span>
-                      </div>
-                    </div>
-                  ))}
+                      </motion.div>
+                    );
+                  })}
                 </div>
-              </div>
+              </ThemedContainer>
 
-              {/* Sample Responses */}
-              <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700">
-                <h3 className="text-xl font-semibold text-white mb-6">Sample Responses</h3>
+              {/* Enhanced Sample Responses */}
+              <ThemedContainer
+                traits={traits}
+                variant="glass"
+                intensity="subtle"
+                animated={true}
+              >
+                <h3 className="text-xl font-semibold text-white mb-6">✨ Sample Responses</h3>
                 <div className="space-y-4">
-                  <div className="bg-gray-700/50 rounded-lg p-4">
-                    <p className="text-sm text-gray-400 mb-2">User: &quot;Tell me a joke&quot;</p>
-                    <p className="text-white">
+                  <motion.div 
+                    className="rounded-lg p-4 border border-opacity-20"
+                    style={{ 
+                      backgroundColor: `${personalityTheme.getPrimaryWithOpacity(0.1)}`,
+                      borderColor: personalityTheme.primary,
+                    }}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.3 }}
+                  >
+                    <p className="text-sm text-gray-400 mb-2 flex items-center">
+                      <span className="mr-2">👤</span>
+                      User: &quot;Tell me a joke&quot;
+                    </p>
+                    <p className="text-white leading-relaxed">
                       {traits.humor > 66
-                        ? "Why don't scientists trust atoms? Because they make up everything! 😄"
+                        ? "Why don't scientists trust atoms? Because they make up everything! 😄 *bounces with excitement* Oh, I've got tons more where that came from!"
                         : traits.humor > 33
-                        ? "Here's a light one: What do you call a fake noodle? An impasta!"
-                        : "I could share a humorous observation, though I tend to keep things more serious and focused."}
+                        ? "Here's a light one: What do you call a fake noodle? An impasta! *chuckles softly* Not too bad, right?"
+                        : "I could share a humorous observation, though I tend to keep things more serious and focused. Perhaps we could discuss something meaningful instead?"}
                     </p>
-                  </div>
-                  <div className="bg-gray-700/50 rounded-lg p-4">
-                    <p className="text-sm text-gray-400 mb-2">User: &quot;I&apos;m feeling stressed&quot;</p>
-                    <p className="text-white">
+                  </motion.div>
+                  
+                  <motion.div 
+                    className="rounded-lg p-4 border border-opacity-20"
+                    style={{ 
+                      backgroundColor: `${personalityTheme.getSecondaryWithOpacity(0.1)}`,
+                      borderColor: personalityTheme.secondary,
+                    }}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.5 }}
+                  >
+                    <p className="text-sm text-gray-400 mb-2 flex items-center">
+                      <span className="mr-2">👤</span>
+                      User: &quot;I&apos;m feeling stressed&quot;
+                    </p>
+                    <p className="text-white leading-relaxed">
                       {traits.empathy > 66
-                        ? "I can sense that weight you're carrying. Let's take a moment together - what's been on your mind lately? I'm here to listen and support you through this. 💙"
+                        ? "I can sense that weight you're carrying. *offers virtual warmth* Let's take a moment together - what's been on your mind lately? I'm here to listen and support you through this. 💙"
                         : traits.empathy > 33
-                        ? "That sounds challenging. What's causing the stress? I'd like to help you work through it."
-                        : "Stress is common. Have you considered specific strategies like time management or prioritization to address the root causes?"}
+                        ? "That sounds challenging. What's causing the stress? I'd like to help you work through it step by step."
+                        : "Stress is common in today's world. Have you considered specific strategies like time management or prioritization to address the root causes?"}
                     </p>
-                  </div>
+                  </motion.div>
+                  
+                  <motion.div 
+                    className="rounded-lg p-4 border border-opacity-20"
+                    style={{ 
+                      backgroundColor: `${personalityTheme.getAccentWithOpacity(0.1)}`,
+                      borderColor: personalityTheme.accent,
+                    }}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.7 }}
+                  >
+                    <p className="text-sm text-gray-400 mb-2 flex items-center">
+                      <span className="mr-2">👤</span>
+                      User: &quot;What&apos;s the meaning of life?&quot;
+                    </p>
+                    <p className="text-white leading-relaxed">
+                      {traits.wisdom > 66
+                        ? "Ah, the eternal question that has captivated minds for millennia. *contemplates deeply* Perhaps meaning isn't found, but created through our connections, growth, and the love we share..."
+                        : traits.creativity > 66
+                        ? "Life is like a blank canvas waiting for you to paint your unique masterpiece! *gestures expansively* Every experience adds another brushstroke to your story."
+                        : "That's a profound philosophical question. Different perspectives throughout history have offered various interpretations. What aspects resonate most with you?"}
+                    </p>
+                  </motion.div>
                 </div>
-              </div>
+              </ThemedContainer>
             </div>
 
             <div className="flex justify-center space-x-4">

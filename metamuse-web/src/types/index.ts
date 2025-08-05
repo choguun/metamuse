@@ -74,6 +74,7 @@ export interface ContractAddresses {
   CommitmentVerifier: `0x${string}`;
   MuseMemory: `0x${string}`;
   MusePlugins: `0x${string}`;
+  MuseRating: `0x${string}`;
 }
 
 export interface AppConfig {

@@ -12,6 +12,7 @@ export const CONTRACTS: ContractAddresses = {
   CommitmentVerifier: (process.env.NEXT_PUBLIC_COMMITMENT_VERIFIER_CONTRACT || '0xeD467634407855e9F48C83f5800Daa16fa859597') as `0x${string}`,
   MuseMemory: (process.env.NEXT_PUBLIC_MUSE_MEMORY_CONTRACT || '0xbfb46F49e50D1e4A591C927E47E22579EC55BEFA') as `0x${string}`,
   MusePlugins: (process.env.NEXT_PUBLIC_MUSE_PLUGINS_CONTRACT || '0xCeE0fD2CfbDeA00338514940FF76cc42eb833fEf') as `0x${string}`,
+  MuseRating: (process.env.NEXT_PUBLIC_MUSE_RATING_CONTRACT || '0x0000000000000000000000000000000000000000') as `0x${string}`,
 };
 
 // Contract ABIs - Simplified for frontend usage
@@ -107,6 +108,63 @@ export const METAMUSE_ABI = [
       { indexed: false, name: 'verificationTime', type: 'uint256' },
     ],
     name: 'InteractionVerified',
+    type: 'event',
+  },
+] as const;
+
+// MuseRating contract ABI for AI Alignment Market
+export const MUSE_RATING_ABI = [
+  {
+    inputs: [
+      { name: 'museId', type: 'uint256' },
+      { name: 'interactionHash', type: 'string' },
+      { name: 'qualityScore', type: 'uint8' },
+      { name: 'personalityAccuracy', type: 'uint8' },
+      { name: 'helpfulness', type: 'uint8' },
+      { name: 'feedback', type: 'string' },
+    ],
+    name: 'rateInteraction',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'museId', type: 'uint256' }],
+    name: 'getMuseStats',
+    outputs: [
+      { name: 'totalRatings', type: 'uint256' },
+      { name: 'averageQuality', type: 'uint256' },
+      { name: 'averagePersonality', type: 'uint256' },
+      { name: 'averageHelpfulness', type: 'uint256' },
+      { name: 'totalRewards', type: 'uint256' },
+      { name: 'lastUpdated', type: 'uint256' },
+    ],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'getPlatformStats',
+    outputs: [
+      { name: 'totalUsers', type: 'uint256' },
+      { name: 'totalRatings', type: 'uint256' },
+      { name: 'totalRewardsDistributed', type: 'uint256' },
+    ],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: 'ratingId', type: 'bytes32' },
+      { indexed: true, name: 'museId', type: 'uint256' },
+      { indexed: true, name: 'rater', type: 'address' },
+      { indexed: false, name: 'qualityScore', type: 'uint8' },
+      { indexed: false, name: 'personalityAccuracy', type: 'uint8' },
+      { indexed: false, name: 'helpfulness', type: 'uint8' },
+      { indexed: false, name: 'rewardAmount', type: 'uint256' },
+    ],
+    name: 'InteractionRated',
     type: 'event',
   },
 ] as const;

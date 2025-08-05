@@ -251,7 +251,10 @@ export function MusePreview({ traits, isOpen, onClose }: MusePreviewProps) {
                     >
                       <p>{message.content}</p>
                       <p className={`text-xs mt-2 ${message.role === 'user' ? 'text-purple-100' : 'text-gray-400'}`}>
-                        {message.timestamp.toLocaleTimeString()}
+                        {message.timestamp instanceof Date 
+                          ? message.timestamp.toLocaleTimeString()
+                          : new Date(message.timestamp).toLocaleTimeString()
+                        }
                       </p>
                     </div>
                   </motion.div>
