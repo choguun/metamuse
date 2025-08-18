@@ -5,12 +5,16 @@ import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagm
 import { motion } from 'framer-motion';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { METAMUSE_ABI, CONTRACTS, PERSONALITY_COLORS, TRAIT_DESCRIPTIONS, API_BASE_URL } from '@/constants';
-import { type MuseTraits } from '@/types';
+import { type MuseTraits, type PromptTemplate, type Avatar, type TemplateApplyResponse } from '@/types';
 import { PersonalitySlider } from '@/components/ui/PersonalitySlider';
 import { MusePreview } from '@/components/ui/MusePreview';
 import { MuseAvatar } from '@/components/avatars/MuseAvatar';
 import { ThemedContainer } from '@/components/ui/themed/ThemedContainer';
 import { usePersonalityTheme } from '@/hooks/usePersonalityTheme';
+import { TemplateSelector } from '@/components/templates/TemplateSelector';
+import { TemplateCustomizer } from '@/components/templates/TemplateCustomizer';
+import { TemplateBuilder } from '@/components/templates/TemplateBuilder';
+import { AvatarSelector } from '@/components/avatars/AvatarSelector';
 
 export default function CreateMuse() {
   const { isConnected, address } = useAccount();
@@ -21,10 +25,20 @@ export default function CreateMuse() {
     humor: 50,
     empathy: 50,
   });
+  const [selectedTemplate, setSelectedTemplate] = useState<PromptTemplate | null>(null);
+  const [appliedTemplate, setAppliedTemplate] = useState<TemplateApplyResponse | null>(null);
+  const [selectedAvatar, setSelectedAvatar] = useState<Avatar | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   
+  // Modal states
+  const [isTemplateSelectorOpen, setIsTemplateSelectorOpen] = useState(false);
+  const [isTemplateCustomizerOpen, setIsTemplateCustomizerOpen] = useState(false);
+  const [isTemplateBuilderOpen, setIsTemplateBuilderOpen] = useState(false);
+  const [isAvatarSelectorOpen, setIsAvatarSelectorOpen] = useState(false);
+  
   // Initialize personality theme at top level to avoid hook violations
+  // Ensure traits is properly initialized before using
   const personalityTheme = usePersonalityTheme(traits);
 
   const { writeContract, data: hash, isPending } = useWriteContract();
@@ -34,7 +48,60 @@ export default function CreateMuse() {
   });
 
   const handleTraitChange = (trait: keyof MuseTraits, value: number) => {
-    setTraits(prev => ({ ...prev, [trait]: value }));
+    setTraits(prev => prev ? ({ ...prev, [trait]: value }) : {
+      creativity: trait === 'creativity' ? value : 50,
+      wisdom: trait === 'wisdom' ? value : 50,
+      humor: trait === 'humor' ? value : 50,
+      empathy: trait === 'empathy' ? value : 50,
+    });
+  };
+
+  // Template handlers
+  const handleTemplateSelected = (template: PromptTemplate) => {
+    setSelectedTemplate(template);
+    setIsTemplateSelectorOpen(false);
+    if (template.variables.length > 0) {
+      setIsTemplateCustomizerOpen(true);
+    } else {
+      // Apply template immediately if no variables
+      handleTemplateApplied({
+        template_id: template.id,
+        system_prompt: template.base_personality.system_prompt,
+        adjusted_traits: traits,
+        variables: {},
+      });
+    }
+  };
+
+  const handleTemplateApplied = (appliedTemplate: TemplateApplyResponse) => {
+    setAppliedTemplate(appliedTemplate);
+    setTraits(appliedTemplate.adjusted_traits || {
+      creativity: 50,
+      wisdom: 50,
+      humor: 50,
+      empathy: 50,
+    });
+    setIsTemplateCustomizerOpen(false);
+  };
+
+  const handleTemplateCreated = (template: PromptTemplate) => {
+    setSelectedTemplate(template);
+    setIsTemplateBuilderOpen(false);
+  };
+
+  const handleRemoveTemplate = () => {
+    setSelectedTemplate(null);
+    setAppliedTemplate(null);
+  };
+
+  // Avatar handlers
+  const handleAvatarSelected = (avatar: Avatar | null) => {
+    setSelectedAvatar(avatar);
+    setIsAvatarSelectorOpen(false);
+  };
+
+  const handleRemoveAvatar = () => {
+    setSelectedAvatar(null);
   };
 
   const handleCreateMuse = async () => {
@@ -43,16 +110,31 @@ export default function CreateMuse() {
     setIsCreating(true);
     try {
       // Create the muse via backend (which handles blockchain + user tracking)
+      const museData: any = {
+        creativity: traits?.creativity || 50,
+        wisdom: traits?.wisdom || 50,
+        humor: traits?.humor || 50,
+        empathy: traits?.empathy || 50,
+        user_address: address, // Include user address for tracking
+      };
+
+      // Include template data if selected
+      if (selectedTemplate && appliedTemplate) {
+        museData.template_id = selectedTemplate.id;
+        museData.system_prompt = appliedTemplate.system_prompt;
+        museData.template_variables = appliedTemplate.variables;
+      }
+
+      // Include avatar data if selected
+      if (selectedAvatar) {
+        museData.avatar_id = selectedAvatar.id;
+        museData.avatar_ipfs_hash = selectedAvatar.ipfs_hash;
+      }
+
       const response = await fetch(`${API_BASE_URL}/api/v1/muses`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          creativity: traits.creativity,
-          wisdom: traits.wisdom,
-          humor: traits.humor,
-          empathy: traits.empathy,
-          user_address: address, // Include user address for tracking
-        }),
+        body: JSON.stringify(museData),
       });
       
       if (!response.ok) {
@@ -97,12 +179,13 @@ export default function CreateMuse() {
 
   const getTraitDescription = (trait: keyof MuseTraits, value: number) => {
     const descriptions = TRAIT_DESCRIPTIONS[trait];
+    if (!descriptions) return 'No description available';
     if (value <= 33) return descriptions.low;
     if (value <= 66) return descriptions.medium;
     return descriptions.high;
   };
 
-  const totalTraits = Object.values(traits).reduce((sum, value) => sum + value, 0);
+  const totalTraits = traits ? Object.values(traits).reduce((sum, value) => sum + value, 0) : 200;
   const averageTrait = totalTraits / 4;
 
   if (!isConnected) {
@@ -160,11 +243,11 @@ export default function CreateMuse() {
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Progress Steps */}
         <div className="mb-12">
-          <div className="flex items-center justify-center space-x-4">
-            {[1, 2, 3].map((stepNumber) => (
-              <div key={stepNumber} className="flex items-center">
+          <div className="flex items-center justify-center space-x-2 overflow-x-auto">
+            {[1, 2, 3, 4, 5].map((stepNumber) => (
+              <div key={stepNumber} className="flex items-center flex-shrink-0">
                 <div
-                  className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${
+                  className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold text-sm ${
                     step >= stepNumber
                       ? 'bg-purple-500 text-white'
                       : 'bg-gray-700 text-gray-400'
@@ -172,9 +255,9 @@ export default function CreateMuse() {
                 >
                   {stepNumber}
                 </div>
-                {stepNumber < 3 && (
+                {stepNumber < 5 && (
                   <div
-                    className={`w-16 h-1 mx-2 ${
+                    className={`w-8 h-1 mx-1 ${
                       step > stepNumber ? 'bg-purple-500' : 'bg-gray-700'
                     }`}
                   />
@@ -183,14 +266,127 @@ export default function CreateMuse() {
             ))}
           </div>
           <div className="flex justify-center mt-4">
-            <span className="text-gray-400">
-              Step {step} of 3: {step === 1 ? 'Define Personality' : step === 2 ? 'Preview & Adjust' : 'Create Muse'}
+            <span className="text-gray-400 text-center">
+              Step {step} of 5: {
+                step === 1 ? 'Choose Template (Optional)' :
+                step === 2 ? 'Define Personality' :
+                step === 3 ? 'Choose Avatar (Optional)' :
+                step === 4 ? 'Preview & Adjust' :
+                'Create Muse'
+              }
             </span>
           </div>
         </div>
 
-        {/* Step 1: Personality Design */}
+        {/* Step 1: Template Selection */}
         {step === 1 && (
+          <motion.div
+            initial={{ opacity: 0, x: 50 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -50 }}
+            className="space-y-8"
+          >
+            <div className="text-center mb-12">
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent mb-4">
+                Choose a Template (Optional)
+              </h1>
+              <p className="text-xl text-gray-300">
+                Start with a pre-built personality template or create your own custom template.
+              </p>
+            </div>
+
+            {selectedTemplate ? (
+              // Selected template display
+              <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700 max-w-2xl mx-auto">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <h3 className="text-xl font-semibold text-white mb-2">{selectedTemplate.name}</h3>
+                    <p className="text-gray-400 text-sm mb-3">{selectedTemplate.description}</p>
+                    <div className="flex items-center space-x-4 text-sm">
+                      <span className="text-gray-500">Category: <span className="text-purple-400">{selectedTemplate.category}</span></span>
+                      <span className="text-gray-500">Rating: <span className="text-yellow-400">{selectedTemplate.rating.toFixed(1)}/5</span></span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleRemoveTemplate}
+                    className="text-gray-400 hover:text-white p-2 rounded-lg hover:bg-gray-700"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                
+                {appliedTemplate && (
+                  <div className="bg-gray-900/50 rounded-lg p-3 text-gray-300 text-sm">
+                    <strong className="text-white">Applied System Prompt:</strong>
+                    <p className="mt-1 line-clamp-3">{appliedTemplate.system_prompt}</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              // Template selection options
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+                <button
+                  onClick={() => setIsTemplateSelectorOpen(true)}
+                  className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700 hover:border-purple-500 transition-colors group"
+                >
+                  <div className="text-center">
+                    <div className="w-12 h-12 bg-purple-500/20 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:bg-purple-500/30 transition-colors">
+                      <svg className="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                      </svg>
+                    </div>
+                    <h3 className="text-lg font-semibold text-white mb-2">Browse Templates</h3>
+                    <p className="text-gray-400 text-sm">Choose from community and official templates</p>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => setIsTemplateBuilderOpen(true)}
+                  className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700 hover:border-blue-500 transition-colors group"
+                >
+                  <div className="text-center">
+                    <div className="w-12 h-12 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:bg-blue-500/30 transition-colors">
+                      <svg className="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                      </svg>
+                    </div>
+                    <h3 className="text-lg font-semibold text-white mb-2">Create Custom</h3>
+                    <p className="text-gray-400 text-sm">Build your own template from scratch</p>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => setStep(2)}
+                  className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700 hover:border-green-500 transition-colors group"
+                >
+                  <div className="text-center">
+                    <div className="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:bg-green-500/30 transition-colors">
+                      <svg className="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                      </svg>
+                    </div>
+                    <h3 className="text-lg font-semibold text-white mb-2">Skip Templates</h3>
+                    <p className="text-gray-400 text-sm">Continue with personality design</p>
+                  </div>
+                </button>
+              </div>
+            )}
+
+            <div className="text-center">
+              <button
+                onClick={() => setStep(2)}
+                className="bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700 text-white px-8 py-3 rounded-lg font-semibold transition-all duration-200"
+              >
+                {selectedTemplate ? 'Continue with Template' : 'Continue without Template'}
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Step 2: Personality Design */}
+        {step === 2 && (
           <motion.div
             initial={{ opacity: 0, x: 50 }}
             animate={{ opacity: 1, x: 0 }}
@@ -207,7 +403,7 @@ export default function CreateMuse() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              {Object.entries(traits).map(([trait, value]) => (
+              {traits ? Object.entries(traits).map(([trait, value]) => (
                 <div key={trait} className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700">
                   <PersonalitySlider
                     trait={trait as keyof MuseTraits}
@@ -219,14 +415,133 @@ export default function CreateMuse() {
                     {getTraitDescription(trait as keyof MuseTraits, value)}
                   </p>
                 </div>
-              ))}
+              )) : null}
             </div>
 
             <div className="text-center">
               <button
-                onClick={() => setStep(2)}
+                onClick={() => setStep(3)}
                 disabled={averageTrait < 10}
                 className="bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700 text-white px-8 py-3 rounded-lg font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Continue to Avatar
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Step 3: Avatar Selection */}
+        {step === 3 && (
+          <motion.div
+            initial={{ opacity: 0, x: 50 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -50 }}
+            className="space-y-8"
+          >
+            <div className="text-center mb-12">
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent mb-4">
+                Choose Your Avatar (Optional)
+              </h1>
+              <p className="text-xl text-gray-300">
+                Select a custom avatar or use the personality-generated one based on your traits.
+              </p>
+            </div>
+
+            <div className="max-w-2xl mx-auto">
+              {selectedAvatar ? (
+                // Selected avatar display
+                <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-xl font-semibold text-white">Selected Avatar</h3>
+                    <button
+                      onClick={handleRemoveAvatar}
+                      className="text-gray-400 hover:text-white p-2 rounded-lg hover:bg-gray-700"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                  
+                  <div className="flex items-center space-x-4">
+                    <img
+                      src={selectedAvatar.cdn_url || `/api/avatar/${selectedAvatar.id}`}
+                      alt={selectedAvatar.name || 'Selected Avatar'}
+                      className="w-20 h-20 object-cover rounded-lg"
+                    />
+                    <div>
+                      <p className="text-white font-medium">{selectedAvatar.name || 'Custom Avatar'}</p>
+                      <p className="text-gray-400 text-sm capitalize">{selectedAvatar.style} style</p>
+                      <p className="text-gray-400 text-sm">{selectedAvatar.category}</p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                // Avatar preview with personality-generated avatar
+                <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700">
+                  <div className="text-center">
+                    <h3 className="text-xl font-semibold text-white mb-4">Current Avatar Preview</h3>
+                    <div className="mb-6">
+                      <MuseAvatar
+                        traits={traits}
+                        tokenId="preview"
+                        size="xl"
+                        interactive={true}
+                        showPersonality={true}
+                        showGlow={true}
+                        className="mx-auto"
+                      />
+                    </div>
+                    <p className="text-gray-400">
+                      This avatar is automatically generated based on your personality traits.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
+                <button
+                  onClick={() => setIsAvatarSelectorOpen(true)}
+                  className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700 hover:border-purple-500 transition-colors group"
+                >
+                  <div className="text-center">
+                    <div className="w-12 h-12 bg-purple-500/20 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:bg-purple-500/30 transition-colors">
+                      <svg className="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-lg font-semibold text-white mb-2">Choose Custom Avatar</h3>
+                    <p className="text-gray-400 text-sm">Browse uploaded avatars or upload your own</p>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => setStep(4)}
+                  className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700 hover:border-green-500 transition-colors group"
+                >
+                  <div className="text-center">
+                    <div className="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:bg-green-500/30 transition-colors">
+                      <svg className="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                      </svg>
+                    </div>
+                    <h3 className="text-lg font-semibold text-white mb-2">Use Generated Avatar</h3>
+                    <p className="text-gray-400 text-sm">Continue with personality-based avatar</p>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            <div className="flex justify-center space-x-4">
+              <button
+                onClick={() => setStep(2)}
+                className="border border-gray-600 hover:border-gray-500 text-gray-300 hover:text-white px-8 py-3 rounded-lg font-semibold transition-all duration-200"
+              >
+                Back to Personality
+              </button>
+              <button
+                onClick={() => setStep(4)}
+                className="bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700 text-white px-8 py-3 rounded-lg font-semibold transition-all duration-200"
               >
                 Continue to Preview
               </button>
@@ -234,8 +549,8 @@ export default function CreateMuse() {
           </motion.div>
         )}
 
-        {/* Step 2: Preview */}
-        {step === 2 && (
+        {/* Step 4: Preview */}
+        {step === 4 && (
           <motion.div
             initial={{ opacity: 0, x: 50 }}
             animate={{ opacity: 1, x: 0 }}
@@ -278,7 +593,7 @@ export default function CreateMuse() {
                 </div>
                 
                 <div className="space-y-4">
-                  {Object.entries(traits).map(([trait, value]) => {
+                  {traits ? Object.entries(traits).map(([trait, value]) => {
                     const traitColor = personalityTheme.gradient[Object.keys(traits).indexOf(trait)] || personalityTheme.primary;
                     
                     return (
@@ -326,7 +641,7 @@ export default function CreateMuse() {
                         </div>
                       </motion.div>
                     );
-                  })}
+                  }) : null}
                 </div>
               </ThemedContainer>
 
@@ -354,9 +669,9 @@ export default function CreateMuse() {
                       User: &quot;Tell me a joke&quot;
                     </p>
                     <p className="text-white leading-relaxed">
-                      {traits.humor > 66
+                      {(traits?.humor || 50) > 66
                         ? "Why don't scientists trust atoms? Because they make up everything! 😄 *bounces with excitement* Oh, I've got tons more where that came from!"
-                        : traits.humor > 33
+                        : (traits?.humor || 50) > 33
                         ? "Here's a light one: What do you call a fake noodle? An impasta! *chuckles softly* Not too bad, right?"
                         : "I could share a humorous observation, though I tend to keep things more serious and focused. Perhaps we could discuss something meaningful instead?"}
                     </p>
@@ -377,9 +692,9 @@ export default function CreateMuse() {
                       User: &quot;I&apos;m feeling stressed&quot;
                     </p>
                     <p className="text-white leading-relaxed">
-                      {traits.empathy > 66
+                      {(traits?.empathy || 50) > 66
                         ? "I can sense that weight you're carrying. *offers virtual warmth* Let's take a moment together - what's been on your mind lately? I'm here to listen and support you through this. 💙"
-                        : traits.empathy > 33
+                        : (traits?.empathy || 50) > 33
                         ? "That sounds challenging. What's causing the stress? I'd like to help you work through it step by step."
                         : "Stress is common in today's world. Have you considered specific strategies like time management or prioritization to address the root causes?"}
                     </p>
@@ -400,9 +715,9 @@ export default function CreateMuse() {
                       User: &quot;What&apos;s the meaning of life?&quot;
                     </p>
                     <p className="text-white leading-relaxed">
-                      {traits.wisdom > 66
+                      {(traits?.wisdom || 50) > 66
                         ? "Ah, the eternal question that has captivated minds for millennia. *contemplates deeply* Perhaps meaning isn't found, but created through our connections, growth, and the love we share..."
-                        : traits.creativity > 66
+                        : (traits?.creativity || 50) > 66
                         ? "Life is like a blank canvas waiting for you to paint your unique masterpiece! *gestures expansively* Every experience adds another brushstroke to your story."
                         : "That's a profound philosophical question. Different perspectives throughout history have offered various interpretations. What aspects resonate most with you?"}
                     </p>
@@ -413,10 +728,10 @@ export default function CreateMuse() {
 
             <div className="flex justify-center space-x-4">
               <button
-                onClick={() => setStep(1)}
+                onClick={() => setStep(3)}
                 className="border border-gray-600 hover:border-gray-500 text-gray-300 hover:text-white px-8 py-3 rounded-lg font-semibold transition-all duration-200"
               >
-                Back to Edit
+                Back to Avatar
               </button>
               <button
                 onClick={handlePreviewInteraction}
@@ -425,7 +740,7 @@ export default function CreateMuse() {
                 Test Interaction
               </button>
               <button
-                onClick={() => setStep(3)}
+                onClick={() => setStep(5)}
                 className="bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700 text-white px-8 py-3 rounded-lg font-semibold transition-all duration-200"
               >
                 Create Muse
@@ -434,8 +749,8 @@ export default function CreateMuse() {
           </motion.div>
         )}
 
-        {/* Step 3: Creation */}
-        {step === 3 && (
+        {/* Step 5: Creation */}
+        {step === 5 && (
           <motion.div
             initial={{ opacity: 0, x: 50 }}
             animate={{ opacity: 1, x: 0 }}
@@ -471,7 +786,7 @@ export default function CreateMuse() {
 
             <div className="flex justify-center space-x-4">
               <button
-                onClick={() => setStep(2)}
+                onClick={() => setStep(4)}
                 disabled={isCreating}
                 className="border border-gray-600 hover:border-gray-500 text-gray-300 hover:text-white px-8 py-3 rounded-lg font-semibold transition-all duration-200 disabled:opacity-50"
               >
@@ -503,6 +818,39 @@ export default function CreateMuse() {
             onClose={() => setIsPreviewOpen(false)}
           />
         )}
+
+        {/* Template Modals */}
+        <TemplateSelector
+          onTemplateSelected={handleTemplateSelected}
+          currentTraits={traits}
+          isOpen={isTemplateSelectorOpen}
+          onClose={() => setIsTemplateSelectorOpen(false)}
+        />
+
+        {selectedTemplate && (
+          <TemplateCustomizer
+            template={selectedTemplate}
+            currentTraits={traits}
+            onApplied={handleTemplateApplied}
+            isOpen={isTemplateCustomizerOpen}
+            onClose={() => setIsTemplateCustomizerOpen(false)}
+          />
+        )}
+
+        <TemplateBuilder
+          onTemplateCreated={handleTemplateCreated}
+          isOpen={isTemplateBuilderOpen}
+          onClose={() => setIsTemplateBuilderOpen(false)}
+        />
+
+        {/* Avatar Modal */}
+        <AvatarSelector
+          currentTraits={traits}
+          onAvatarSelected={handleAvatarSelected}
+          selectedAvatarId={selectedAvatar?.id}
+          isOpen={isAvatarSelectorOpen}
+          onClose={() => setIsAvatarSelectorOpen(false)}
+        />
       </div>
     </div>
   );

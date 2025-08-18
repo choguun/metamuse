@@ -11,8 +11,17 @@ export interface PersonalityTheme {
   dominant: keyof MuseTraits;
 }
 
-export function getPersonalityTheme(traits: MuseTraits): PersonalityTheme {
-  const { creativity, wisdom, humor, empathy } = traits;
+export function getPersonalityTheme(traits: MuseTraits | undefined | null): PersonalityTheme {
+  // Default traits if none provided
+  const defaultTraits = {
+    creativity: 50,
+    wisdom: 50,
+    humor: 50,
+    empathy: 50,
+  };
+  
+  const safeTraits = traits || defaultTraits;
+  const { creativity, wisdom, humor, empathy } = safeTraits;
   
   // Find dominant trait
   const traitValues = { creativity, wisdom, humor, empathy };
@@ -77,7 +86,7 @@ export function getPersonalityTheme(traits: MuseTraits): PersonalityTheme {
   }
   
   // Balanced personalities: Adaptive colors
-  const balancedColor = getBalancedTheme(traits);
+  const balancedColor = getBalancedTheme(safeTraits);
   return {
     primary: balancedColor.primary,
     secondary: balancedColor.secondary,

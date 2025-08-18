@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use tokio::sync::RwLock;
 use std::sync::Arc;
 use crate::config::Config;
-use alith::data::storage::PinataIPFS;
+use alith::data::storage::{PinataIPFS, DataStorage};
 use alith::core::chat::Message;
 
 /// Represents a complete chat session stored on IPFS
@@ -695,6 +695,30 @@ impl IPFSChatHistoryManager {
 
     async fn set_user_muse_session(&self, user_muse_key: &str, session_id: String) {
         self.user_muse_sessions.write().await.insert(user_muse_key.to_string(), session_id);
+    }
+
+    /// Store training data contribution to IPFS
+    pub async fn store_training_data(&self, data: &[u8], data_hash: &str) -> Result<String> {
+        println!("📁 Storing training data to IPFS - Hash: {}", data_hash);
+        
+        // Create upload request with training data
+        let upload_request = alith::data::storage::UploadOptions::builder()
+            .name(format!("training_data_{}.json", data_hash))
+            .data(data.to_vec())
+            .token(self.app_config.ipfs_jwt_token.clone().unwrap_or_default())
+            .build();
+
+        // Upload to IPFS via PinataIPFS
+        match self.ipfs_storage.upload(upload_request).await {
+            Ok(file_meta) => {
+                println!("✅ Training data uploaded to IPFS: {}", file_meta.id);
+                Ok(file_meta.id)
+            }
+            Err(e) => {
+                println!("❌ Failed to upload training data to IPFS: {}", e);
+                Err(anyhow::anyhow!("IPFS upload failed: {}", e))
+            }
+        }
     }
 }
 

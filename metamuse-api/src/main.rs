@@ -23,6 +23,9 @@ mod tee_attestation;
 mod cot_personality;
 mod rating_system;
 mod semantic_search;
+mod template_system;
+mod avatar_system;
+mod training_data_market;
 
 use crate::config::Config;
 use crate::blockchain_client::BlockchainClient;
@@ -34,6 +37,9 @@ use crate::ipfs_chat_history::IPFSChatHistoryManager;
 use crate::tee_attestation::MuseTEEService;
 use crate::rating_system::AIAlignmentMarket;
 use crate::semantic_search::SemanticSearchService;
+use crate::template_system::TemplateManager;
+use crate::avatar_system::AvatarManager;
+use crate::training_data_market::TrainingDataMarketplace;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -48,6 +54,9 @@ pub struct AppState {
     pub tee_service: Arc<MuseTEEService>, // TEE attestation service
     pub rating_market: Arc<AIAlignmentMarket>, // AI alignment marketplace
     pub semantic_search: Arc<SemanticSearchService>, // Semantic search with embeddings
+    pub template_manager: Arc<Mutex<TemplateManager>>, // Prompt template management
+    pub avatar_manager: Arc<Mutex<AvatarManager>>, // Avatar upload and management
+    pub training_data_market: Arc<Mutex<TrainingDataMarketplace>>, // AI training data marketplace with DAT rewards
     pub user_muses: Arc<RwLock<HashMap<String, Vec<u64>>>>, // Map of user addresses to their muse token IDs
 }
 
@@ -85,11 +94,22 @@ async fn main() -> Result<(), anyhow::Error> {
     let tee_service = Arc::new(MuseTEEService::new());
     let rating_market = Arc::new(AIAlignmentMarket::new(blockchain_client.clone(), config.clone()));
     let semantic_search = Arc::new(SemanticSearchService::new(config.clone(), ipfs_chat_history.clone()));
+    let template_manager = Arc::new(Mutex::new(TemplateManager::new()));
+    let avatar_manager = Arc::new(Mutex::new(AvatarManager::new()));
+    let training_data_market = Arc::new(Mutex::new(TrainingDataMarketplace::new(
+        config.clone(),
+        blockchain_client.clone(),
+        semantic_search.clone(),
+        ipfs_chat_history.clone(),
+    )));
     
     println!("🌐 IPFS Chat History Manager initialized - Web3-native conversation persistence");
     println!("🔒 TEE Attestation Service initialized - World's first verifiable AI companions");
     println!("🏪 AI Alignment Market initialized - First decentralized AI improvement marketplace");
     println!("🔍 Semantic Search Service initialized - Advanced RAG with vector embeddings");
+    println!("📝 Template Manager initialized - Comprehensive prompt builder templates");
+    println!("🖼️ Avatar Manager initialized - Complete avatar upload and management system");
+    println!("🏭 Training Data Marketplace initialized - First decentralized AI training data economy with DAT rewards");
     
     // Initialize demo embeddings for semantic search
     if let Err(e) = semantic_search.initialize_demo_embeddings().await {
@@ -109,6 +129,9 @@ async fn main() -> Result<(), anyhow::Error> {
         tee_service,
         rating_market,
         semantic_search,
+        template_manager,
+        avatar_manager,
+        training_data_market,
         user_muses: Arc::new(RwLock::new(HashMap::new())),
     });
     
@@ -124,6 +147,10 @@ async fn main() -> Result<(), anyhow::Error> {
         .merge(route::verification_routes())
         .merge(route::rating_routes())
         .merge(route::semantic_routes())
+        .merge(route::template_routes())
+        .merge(route::avatar_routes())
+        .merge(route::training_data_routes())
+        .merge(route::dat_routes())
         .with_state(app_state)
         .layer(CorsLayer::permissive());
     

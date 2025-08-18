@@ -12,3 +12,6 @@ export { AIAlignmentMarket } from './market/AIAlignmentMarket';
 
 // Bubble Components
 export { PersonalityChatBubble, TypingIndicator } from './bubbles/PersonalityChatBubble';
+
+// DAT Components
+export { DATMintingPanel } from './dat/DATMintingPanel';

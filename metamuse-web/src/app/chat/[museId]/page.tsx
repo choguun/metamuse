@@ -18,7 +18,8 @@ import {
   SemanticMemoryPanel, 
   AIAlignmentMarket, 
   PersonalityChatBubble,
-  TypingIndicator 
+  TypingIndicator,
+  DATMintingPanel
 } from '@/components/chat';
 
 interface ChatMessage {
@@ -450,6 +451,20 @@ export default function ChatPage() {
     // }
   };
 
+  // ✅ NEW: DAT status indicator
+  const getDATStatusIcon = (message: ChatMessage) => {
+    if (mintedDATs.has(message.id)) {
+      return <span className="text-green-400 text-xs ml-2" title="DAT Minted">🏷️</span>;
+    }
+    if (datMintingInProgress.has(message.id)) {
+      return <span className="text-yellow-400 text-xs ml-2" title="DAT Minting in Progress">⏳</span>;
+    }
+    if (isEligibleForDAT(message)) {
+      return <span className="text-blue-400 text-xs ml-2" title="Eligible for DAT - Click to mint">📜</span>;
+    }
+    return null;
+  };
+
   // ✅ NEW: Chain of Thought reasoning display
   const [showReasoningFor, setShowReasoningFor] = useState<string | null>(null);
 
@@ -525,6 +540,11 @@ export default function ChatPage() {
     feedback: '',
   });
   const [isSubmittingRating, setIsSubmittingRating] = useState(false);
+
+  // ✅ NEW: DAT Minting System
+  const [showDATMintingFor, setShowDATMintingFor] = useState<string | null>(null);
+  const [mintedDATs, setMintedDATs] = useState<Set<string>>(new Set());
+  const [datMintingInProgress, setDATMintingInProgress] = useState<Set<string>>(new Set());
 
   // ✅ NEW: Rating functions
   const toggleRating = (messageId: string) => {
@@ -602,6 +622,35 @@ export default function ChatPage() {
     // Simple hash generation (in production, use crypto library)
     const combined = `${museId}|${userMessage}|${aiResponse}|${timestamp}`;
     return `0x${btoa(combined).replace(/[^a-zA-Z0-9]/g, '').slice(0, 64).padEnd(64, '0')}`;
+  };
+
+  // ✅ NEW: DAT Minting functions
+  const toggleDATMinting = (messageId: string) => {
+    setShowDATMintingFor(showDATMintingFor === messageId ? null : messageId);
+  };
+
+  const handleDATMintSuccess = (messageId: string, datId: string, ipfsHash: string) => {
+    console.log('🎉 DAT minted successfully:', { messageId, datId, ipfsHash });
+    setMintedDATs(prev => new Set([...prev, messageId]));
+    setDATMintingInProgress(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(messageId);
+      return newSet;
+    });
+    // Close DAT minting panel after success
+    setShowDATMintingFor(null);
+  };
+
+  const handleDATMintStart = (messageId: string) => {
+    setDATMintingInProgress(prev => new Set([...prev, messageId]));
+  };
+
+  const isEligibleForDAT = (message: ChatMessage): boolean => {
+    // DATs can only be minted for AI responses that have some form of verification
+    return message.role === 'muse' && 
+           !mintedDATs.has(message.id) &&
+           !datMintingInProgress.has(message.id) &&
+           (message.tee_verified || message.verification_status === 'committed' || message.commitment_hash);
   };
 
   // ✅ NEW: Chain of Thought testing function
@@ -956,7 +1005,23 @@ export default function ChatPage() {
                     showAvatar={true}
                     onMessageClick={() => {
                       if (message.role === 'muse') {
-                        setCurrentRatingMessage(currentRatingMessage === message.id ? null : message.id);
+                        // Cycle through different panel states: none -> rating -> DAT -> none
+                        if (!currentRatingMessage && !showDATMintingFor) {
+                          setCurrentRatingMessage(message.id);
+                        } else if (currentRatingMessage === message.id) {
+                          if (isEligibleForDAT(message)) {
+                            setCurrentRatingMessage(null);
+                            setShowDATMintingFor(message.id);
+                          } else {
+                            setCurrentRatingMessage(null);
+                          }
+                        } else if (showDATMintingFor === message.id) {
+                          setShowDATMintingFor(null);
+                        } else {
+                          // Close other panels and open rating for this message
+                          setCurrentRatingMessage(message.id);
+                          setShowDATMintingFor(null);
+                        }
                       }
                     }}
                   />
@@ -964,6 +1029,34 @@ export default function ChatPage() {
                   {/* Phase 2 Feature Panels */}
                   {message.role === 'muse' && (
                     <div className="ml-12 space-y-3">
+                      
+                      {/* ✅ NEW: DAT & Verification Status Bar */}
+                      <div className="flex items-center space-x-4 text-xs">
+                        <div className="flex items-center space-x-2">
+                          {getVerificationIcon(message.verification_status, message.tee_verified)}
+                          {getDATStatusIcon(message)}
+                        </div>
+                        
+                        {/* Interactive action hints */}
+                        <div className="flex items-center space-x-3 text-gray-500">
+                          {message.role === 'muse' && !currentRatingMessage && !showDATMintingFor && (
+                            <span className="hover:text-gray-300 cursor-pointer" title="Click message to rate">
+                              💫 Click to rate
+                            </span>
+                          )}
+                          {isEligibleForDAT(message) && currentRatingMessage === message.id && (
+                            <span className="hover:text-blue-300 cursor-pointer" title="Click again for DAT options">
+                              🏷️ Click again for DAT
+                            </span>
+                          )}
+                          {mintedDATs.has(message.id) && (
+                            <span className="text-green-400" title="DAT Certificate Available">
+                              ✅ DAT Minted
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      
                       {/* TEE Verification Badge */}
                       {message.tee_verified && (
                         <TEEBadge
@@ -1118,6 +1211,34 @@ export default function ChatPage() {
                             rewardPool: 125000,
                             topRaters: 1250,
                           }}
+                        />
+                      )}
+                      
+                      {/* ✅ NEW: DAT Minting Panel */}
+                      {isEligibleForDAT(message) && showDATMintingFor === message.id && (
+                        <DATMintingPanel
+                          traits={{
+                            creativity: muse.creativity,
+                            wisdom: muse.wisdom,
+                            humor: muse.humor,
+                            empathy: muse.empathy,
+                          }}
+                          messageId={message.id}
+                          sessionId={session?.session_id || ''}
+                          userMessage={
+                            // Find the user message that corresponds to this AI response
+                            session?.messages.find((msg, idx) => 
+                              msg.role === 'user' && 
+                              session.messages[idx + 1]?.id === message.id
+                            )?.content || 'Previous user message'
+                          }
+                          aiResponse={message.content}
+                          timestamp={message.timestamp}
+                          teeAttestation={message.tee_attestation}
+                          commitmentHash={message.commitment_hash}
+                          isVisible={true}
+                          onToggle={() => toggleDATMinting(message.id)}
+                          onMintSuccess={(datId, ipfsHash) => handleDATMintSuccess(message.id, datId, ipfsHash)}
                         />
                       )}
                     </div>

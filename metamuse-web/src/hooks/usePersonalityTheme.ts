@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { MuseTraits } from '@/types';
 import { getPersonalityTheme, getPersonalityDescription, getPersonalityEmoji } from '@/utils/personalityColors';
 
-export function usePersonalityTheme(traits: MuseTraits) {
+export function usePersonalityTheme(traits: MuseTraits | undefined | null) {
   return useMemo(() => {
     const theme = getPersonalityTheme(traits);
     
@@ -127,7 +127,7 @@ export function usePersonalityTheme(traits: MuseTraits) {
 }
 
 // Hook for theme transitions when switching between muses
-export function useThemeTransition(traits: MuseTraits, duration: number = 0.5) {
+export function useThemeTransition(traits: MuseTraits | undefined | null, duration: number = 0.5) {
   const theme = usePersonalityTheme(traits);
   
   return useMemo(() => ({
@@ -152,17 +152,22 @@ export function useThemeTransition(traits: MuseTraits, duration: number = 0.5) {
 }
 
 // Utility hook for comparing personality themes
-export function usePersonalityComparison(traitsA: MuseTraits, traitsB: MuseTraits) {
+export function usePersonalityComparison(traitsA: MuseTraits | undefined | null, traitsB: MuseTraits | undefined | null) {
   return useMemo(() => {
     const themeA = getPersonalityTheme(traitsA);
     const themeB = getPersonalityTheme(traitsB);
     
+    // Default traits for comparison
+    const defaultTraits = { creativity: 50, wisdom: 50, humor: 50, empathy: 50 };
+    const safeTraitsA = traitsA || defaultTraits;
+    const safeTraitsB = traitsB || defaultTraits;
+    
     // Calculate personality distance
     const distance = Math.sqrt(
-      Math.pow(traitsA.creativity - traitsB.creativity, 2) +
-      Math.pow(traitsA.wisdom - traitsB.wisdom, 2) +
-      Math.pow(traitsA.humor - traitsB.humor, 2) +
-      Math.pow(traitsA.empathy - traitsB.empathy, 2)
+      Math.pow(safeTraitsA.creativity - safeTraitsB.creativity, 2) +
+      Math.pow(safeTraitsA.wisdom - safeTraitsB.wisdom, 2) +
+      Math.pow(safeTraitsA.humor - safeTraitsB.humor, 2) +
+      Math.pow(safeTraitsA.empathy - safeTraitsB.empathy, 2)
     );
     
     const similarity = Math.max(0, 100 - (distance / 2)); // Normalize to 0-100%

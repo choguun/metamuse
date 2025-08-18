@@ -6,7 +6,7 @@ import { MuseTraits } from '@/types';
 import { getPersonalityTheme, getPersonalityEmoji, getAnimationPreset } from '@/utils/personalityColors';
 
 interface MuseAvatarProps {
-  traits: MuseTraits;
+  traits: MuseTraits | undefined | null;
   tokenId: string;
   size?: 'sm' | 'md' | 'lg' | 'xl';
   interactive?: boolean;
@@ -42,7 +42,16 @@ export function MuseAvatar({
   
   // Generate unique shapes based on personality (memoized for consistency)
   const avatarShapes = useMemo(() => {
-    const { creativity, wisdom, humor, empathy } = traits;
+    // Default traits if none provided
+    const defaultTraits = {
+      creativity: 50,
+      wisdom: 50,
+      humor: 50,
+      empathy: 50,
+    };
+    
+    const safeTraits = traits || defaultTraits;
+    const { creativity, wisdom, humor, empathy } = safeTraits;
     
     // Creative: Fluid, organic shapes with flowing animations
     if (creativity > 70) {
@@ -231,7 +240,7 @@ export function MuseAvatar({
           transition={animationPreset}
         />
         {/* Balanced trait indicators */}
-        {Object.entries(traits).map((trait, index) => {
+        {Object.entries(safeTraits).map((trait, index) => {
           const angle = (index * Math.PI * 2) / 4;
           const indicatorRadius = baseRadius * 0.3;
           const x = roundCoord(cx + Math.cos(angle) * indicatorRadius);

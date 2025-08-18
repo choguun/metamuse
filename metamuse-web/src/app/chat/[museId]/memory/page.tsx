@@ -137,7 +137,7 @@ function MemoryInsights({
   }, {} as Record<string, number>);
   
   const topTags = Object.entries(tagFrequency)
-    .sort(([,a], [,b]) => b - a)
+    .sort(([,a], [,b]) => (b as number) - (a as number))
     .slice(0, 5);
 
   // Emotional analysis

@@ -8,6 +8,8 @@ import "../src/CommitmentVerifier.sol";
 import "../src/MuseMemory.sol";
 import "../src/MusePlugins.sol";
 import "../src/MuseRating.sol";
+import "../src/InteractionDAT.sol";
+import "../src/TrainingDataDAT.sol";
 
 contract DeployHyperion is Script {
     function setUp() public {}
@@ -48,6 +50,16 @@ contract DeployHyperion is Script {
         MuseRating rating = new MuseRating();
         console.log("MuseRating deployed at:", address(rating));
 
+        // 6. Deploy InteractionDAT contract for verified AI interaction certificates
+        console.log("Deploying InteractionDAT contract...");
+        InteractionDAT interactionDAT = new InteractionDAT(address(metaMuse));
+        console.log("InteractionDAT deployed at:", address(interactionDAT));
+
+        // 7. Deploy TrainingDataDAT contract for AI training data marketplace
+        console.log("Deploying TrainingDataDAT contract...");
+        TrainingDataDAT trainingDataDAT = new TrainingDataDAT(address(metaMuse), address(rating));
+        console.log("TrainingDataDAT deployed at:", address(trainingDataDAT));
+
         console.log("All contracts deployed and configured successfully!");
 
         vm.stopBroadcast();
@@ -61,7 +73,9 @@ contract DeployHyperion is Script {
             "COMMITMENT_VERIFIER_CONTRACT=", vm.toString(address(verifier)), "\n",
             "MUSE_MEMORY_CONTRACT=", vm.toString(address(museMemory)), "\n",
             "MUSE_PLUGINS_CONTRACT=", vm.toString(address(plugins)), "\n",
-            "MUSE_RATING_CONTRACT=", vm.toString(address(rating)), "\n\n",
+            "MUSE_RATING_CONTRACT=", vm.toString(address(rating)), "\n",
+            "INTERACTION_DAT_CONTRACT=", vm.toString(address(interactionDAT)), "\n",
+            "TRAINING_DATA_DAT_CONTRACT=", vm.toString(address(trainingDataDAT)), "\n\n",
             "# Network Details\n",
             "CHAIN_ID=133717\n",
             "RPC_URL=https://hyperion-testnet.metisdevops.link\n",
@@ -76,6 +90,8 @@ contract DeployHyperion is Script {
         console.log("MuseMemory:", address(museMemory));
         console.log("MusePlugins:", address(plugins));
         console.log("MuseRating:", address(rating));
+        console.log("InteractionDAT:", address(interactionDAT));
+        console.log("TrainingDataDAT:", address(trainingDataDAT));
         console.log("\nDeployment details saved to: ./deployments/hyperion-testnet.env");
         console.log("Gas used for deployment: ~3.0M gas");
         console.log("Network: Metis Hyperion Testnet (Chain ID: 133717)");
@@ -92,5 +108,9 @@ contract DeployHyperion is Script {
         console.log("forge verify-contract", address(plugins), "src/MusePlugins.sol:MusePlugins --chain metis-hyperion-testnet");
         console.log("MuseRating verification:");
         console.log("forge verify-contract", address(rating), "src/MuseRating.sol:MuseRating --chain metis-hyperion-testnet");
+        console.log("InteractionDAT verification:");
+        console.log("forge verify-contract", address(interactionDAT), "src/InteractionDAT.sol:InteractionDAT --chain metis-hyperion-testnet");
+        console.log("TrainingDataDAT verification:");
+        console.log("forge verify-contract", address(trainingDataDAT), "src/TrainingDataDAT.sol:TrainingDataDAT --chain metis-hyperion-testnet");
     }
 }

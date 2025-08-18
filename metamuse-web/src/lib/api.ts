@@ -495,6 +495,100 @@ export const api = {
         last_reward_date?: string;
       }>(`/api/v1/ratings/user/${userAddress}/rewards`),
   },
+
+  // DAT (Data Anchoring Tokens) API
+  dat: {
+    // Mint a new DAT for a verified AI interaction
+    mint: (data: {
+      interaction_data: {
+        message_id: string;
+        session_id: string;
+        user_message: string;
+        ai_response: string;
+        timestamp: number;
+        user_address: string;
+      };
+      tee_proof?: {
+        attestation_hex: string;
+        enclave_id: string;
+        timestamp: number;
+        nonce: string;
+      };
+      verification_proof?: {
+        commitment_hash: string;
+        signature: string;
+        block_number: number;
+      };
+    }) =>
+      apiClient.post<{
+        dat_id: string;
+        ipfs_hash: string;
+        contract_address: string;
+        token_id?: string;
+        transaction_hash?: string;
+        success: boolean;
+        error_message?: string;
+      }>('/api/v1/dat/mint', data),
+
+    // Get DATs owned by a user
+    getUserDATs: (userAddress: string, params?: { limit?: number; offset?: number }) =>
+      apiClient.get<{
+        dats: Array<{
+          dat_id: string;
+          ipfs_hash: string;
+          contract_address: string;
+          token_id: string;
+          interaction_data: {
+            message_id: string;
+            session_id: string;
+            user_message: string;
+            ai_response: string;
+            timestamp: number;
+            user_address: string;
+          };
+          tee_verified: boolean;
+          blockchain_verified: boolean;
+          created_at: number;
+        }>;
+        total: number;
+        has_more: boolean;
+      }>(`/api/v1/dat/user/${userAddress}${params ? '?' + new URLSearchParams(Object.entries(params).map(([k, v]) => [k, v?.toString() || ''])).toString() : ''}`),
+
+    // Verify DAT authenticity
+    verify: (datId: string) =>
+      apiClient.get<{
+        dat_id: string;
+        is_authentic: boolean;
+        verification_details: {
+          tee_verified: boolean;
+          blockchain_verified: boolean;
+          ipfs_accessible: boolean;
+          signature_valid: boolean;
+        };
+        metadata: any;
+      }>(`/api/v1/dat/${datId}/verify`),
+
+    // Get DAT metadata from IPFS
+    getMetadata: (ipfsHash: string) =>
+      apiClient.get<{
+        dat_id: string;
+        interaction_data: any;
+        tee_proof?: any;
+        verification_proof?: any;
+        created_at: number;
+        authenticity_score: number;
+      }>(`/api/v1/dat/metadata/${ipfsHash}`),
+
+    // Get platform DAT statistics
+    getStats: () =>
+      apiClient.get<{
+        total_dats_minted: number;
+        total_tee_verified: number;
+        total_blockchain_verified: number;
+        active_users: number;
+        total_ipfs_storage: number;
+      }>('/api/v1/dat/stats'),
+  },
 };
 
 // Helper functions for common API patterns

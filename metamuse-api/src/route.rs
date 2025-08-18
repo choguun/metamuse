@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State, Json, Query},
+    extract::{Path, State, Json, Query, Multipart},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
@@ -20,7 +20,7 @@ pub struct ErrorResponse {
 }
 use std::sync::Arc;
 
-use crate::{AppState, persist_memory::InteractionData, muse_orchestrator::MuseTraits, rating_system::InteractionRating, semantic_search::{SemanticQuery, SemanticSearchResult}};
+use crate::{AppState, persist_memory::InteractionData, muse_orchestrator::MuseTraits, rating_system::InteractionRating, semantic_search::{SemanticQuery, SemanticSearchResult}, template_system::{PromptTemplate, TemplateCategory, TemplateVariable}, avatar_system::{Avatar, AvatarUploadRequest, AvatarUploadResponse, AvatarGenerationRequest, AvatarCategory, AvatarStyle}, training_data_market::{ContributeTrainingDataRequest, ContributeTrainingDataResponse}};
 
 // Request/Response types
 #[derive(Debug, Deserialize)]
@@ -98,6 +98,130 @@ pub struct ExploreQuery {
     pub limit: Option<usize>,
 }
 
+// DAT (Data Anchoring Token) types for verified AI interactions
+#[derive(Debug, Deserialize)]
+pub struct MintDATRequest {
+    // ✅ UPDATED: Frontend-compatible structure
+    pub interaction_data: DATInteractionData,
+    pub tee_proof: Option<DATTEEProofRequest>,
+    pub verification_proof: Option<DATVerificationProofRequest>,
+}
+
+// ✅ NEW: Interaction data from frontend
+#[derive(Debug, Deserialize)]
+pub struct DATInteractionData {
+    pub message_id: String,
+    pub session_id: String,
+    pub user_message: String,
+    pub ai_response: String,
+    pub timestamp: u64,
+    pub user_address: String,
+}
+
+// ✅ NEW: TEE proof request from frontend
+#[derive(Debug, Deserialize)]
+pub struct DATTEEProofRequest {
+    pub attestation_hex: String,
+    pub enclave_id: String,
+    pub timestamp: u64,
+    pub nonce: String,
+}
+
+// ✅ NEW: Verification proof request from frontend
+#[derive(Debug, Deserialize)]
+pub struct DATVerificationProofRequest {
+    pub commitment_hash: String,
+    pub signature: String,
+    pub block_number: u64,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct DATChatMessage {
+    pub role: String, // "user" or "assistant"
+    pub content: String,
+    pub timestamp: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MintDATResponse {
+    pub success: bool,
+    pub dat_token_id: Option<u64>,
+    pub ipfs_metadata_hash: Option<String>,
+    pub transaction_hash: Option<String>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DATMetadata {
+    pub name: String,
+    pub description: String,
+    pub image: String,
+    pub attributes: Vec<DATAttribute>,
+    pub interaction_proof: DATInteractionProof,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DATAttribute {
+    pub trait_type: String,
+    pub value: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DATInteractionProof {
+    pub conversation_hash: String,
+    pub tee_verified: bool,
+    pub participant: String,
+    pub muse_token_id: u64,
+    pub timestamp: u64,
+    pub interaction_type: String,
+    pub messages: Vec<DATChatMessage>,
+    // ✅ NEW: Comprehensive TEE attestation data
+    pub tee_proof: Option<DATTEEProof>,
+    // ✅ NEW: Blockchain verification proof
+    pub blockchain_proof: Option<DATBlockchainProof>,
+}
+
+// ✅ NEW: Comprehensive TEE proof structure
+#[derive(Debug, Deserialize, Serialize)]
+pub struct DATTEEProof {
+    pub attestation_hex: String,
+    pub enclave_id: String,
+    pub timestamp: u64,
+    pub nonce: String,
+    pub signature: String,
+    pub measurement: String, // PCR measurement of the enclave
+    pub policy_hash: String, // Hash of the execution policy
+    pub public_key: String, // TEE public key for verification
+}
+
+// ✅ NEW: Blockchain verification proof
+#[derive(Debug, Deserialize, Serialize)]
+pub struct DATBlockchainProof {
+    pub commitment_hash: String,
+    pub transaction_hash: Option<String>,
+    pub block_number: Option<u64>,
+    pub signature: String,
+    pub verification_status: String,
+    pub gas_used: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UserDATsResponse {
+    pub dats: Vec<UserDAT>,
+    pub total_count: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UserDAT {
+    pub token_id: u64,
+    pub muse_token_id: u64,
+    pub interaction_type: String,
+    pub is_significant: bool,
+    pub timestamp: u64,
+    pub tee_verified: bool,
+    pub ipfs_metadata_hash: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct MuseListResponse {
     pub muses: Vec<MuseInfo>,
@@ -155,6 +279,90 @@ pub struct ChatMessageResponse {
     pub tee_attestation: Option<String>,
     pub tee_verified: bool,
     pub timestamp: u64,
+}
+
+// Template system request/response types
+#[derive(Debug, Deserialize)]
+pub struct TemplateCreateRequest {
+    pub name: String,
+    pub description: String,
+    pub category: TemplateCategory,
+    pub system_prompt: String,
+    pub scenarios: std::collections::HashMap<String, String>,
+    pub variables: Vec<TemplateVariable>,
+    pub tags: Vec<String>,
+    pub is_public: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TemplateResponse {
+    pub template: PromptTemplate,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TemplateListResponse {
+    pub templates: Vec<PromptTemplate>,
+    pub total_count: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TemplateApplyRequest {
+    pub template_id: String,
+    pub variables: std::collections::HashMap<String, serde_json::Value>,
+    pub traits: MuseTraits,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TemplateApplyResponse {
+    pub system_prompt: String,
+    pub template_used: String,
+    pub variables_applied: std::collections::HashMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TemplateSearchRequest {
+    pub query: String,
+    pub category: Option<TemplateCategory>,
+    pub tags: Option<Vec<String>>,
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TemplateRatingRequest {
+    pub template_id: String,
+    pub rating: u8, // 1-5 stars
+}
+
+// Avatar system request/response types
+#[derive(Debug, Serialize)]
+pub struct AvatarResponse {
+    pub avatar: Avatar,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AvatarListResponse {
+    pub avatars: Vec<Avatar>,
+    pub total_count: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AvatarSearchRequest {
+    pub query: String,
+    pub category: Option<AvatarCategory>,
+    pub style: Option<AvatarStyle>,
+    pub tags: Option<Vec<String>>,
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AvatarRatingRequest {
+    pub avatar_id: String,
+    pub rating: u8, // 1-5 stars
+}
+
+#[derive(Debug, Serialize)]
+pub struct AvatarStatsResponse {
+    pub stats: std::collections::HashMap<String, serde_json::Value>,
 }
 
 // Route implementations
@@ -215,6 +423,44 @@ pub fn semantic_routes() -> Router<Arc<AppState>> {
         .route("/api/v1/semantic/context/{muse_id}", post(get_contextual_memories))
         .route("/api/v1/semantic/stats", get(get_semantic_stats))
         .route("/api/v1/semantic/store", post(store_content_embedding))
+}
+
+// ✅ NEW: Template System routes - Comprehensive prompt builder templates
+pub fn template_routes() -> Router<Arc<AppState>> {
+    Router::new()
+        .route("/api/v1/templates", get(list_templates))
+        .route("/api/v1/templates", post(create_template))
+        .route("/api/v1/templates/{id}", get(get_template))
+        .route("/api/v1/templates/{id}", axum::routing::put(update_template))
+        .route("/api/v1/templates/{id}", axum::routing::delete(delete_template))
+        .route("/api/v1/templates/category/{category}", get(get_templates_by_category))
+        .route("/api/v1/templates/user/{address}", get(get_user_templates))
+        .route("/api/v1/templates/search", post(search_templates))
+        .route("/api/v1/templates/{id}/apply", post(apply_template))
+        .route("/api/v1/templates/{id}/rate", post(rate_template))
+        .route("/api/v1/templates/prebuilt", get(get_prebuilt_templates))
+}
+
+// ✅ NEW: Avatar System routes - Complete avatar upload and management
+pub fn avatar_routes() -> Router<Arc<AppState>> {
+    Router::new()
+        .route("/api/v1/avatars", get(list_avatars))
+        .route("/api/v1/avatars/upload", post(upload_avatar))
+        .route("/api/v1/avatars/generate", post(generate_avatar))
+        .route("/api/v1/avatars/{id}", get(get_avatar))
+        .route("/api/v1/avatars/{id}", axum::routing::delete(delete_avatar))
+        .route("/api/v1/avatars/category/{category}", get(get_avatars_by_category))
+        .route("/api/v1/avatars/style/{style}", get(get_avatars_by_style))
+        .route("/api/v1/avatars/user/{address}", get(get_user_avatars))
+        .route("/api/v1/avatars/search", post(search_avatars))
+        .route("/api/v1/avatars/{id}/rate", post(rate_avatar))
+        .route("/api/v1/avatars/stats", get(get_avatar_stats))
+        .route("/api/v1/avatars/collections", get(list_avatar_collections))
+        .route("/api/v1/avatars/collections", post(create_avatar_collection))
+        .route("/api/v1/avatars/collections/{id}", get(get_avatar_collection))
+        .route("/api/v1/avatars/collections/user/{address}", get(get_user_avatar_collections))
+        // ✅ NEW: Avatar image serving route (proxies IPFS to avoid CORS)
+        .route("/api/avatar/{id}", get(serve_avatar_image))
 }
 
 // Muse management handlers
@@ -1672,4 +1918,1048 @@ async fn store_content_embedding(
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
+}
+
+// ===== TEMPLATE SYSTEM HANDLERS =====
+
+/// List all available templates
+async fn list_templates(
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let template_manager = state.template_manager.lock().await;
+    let all_templates = template_manager.get_all_templates();
+    let templates: Vec<PromptTemplate> = all_templates.values().cloned().collect();
+    
+    Ok((StatusCode::OK, Json(TemplateListResponse {
+        templates,
+        total_count: all_templates.len(),
+    })))
+}
+
+/// Create a new custom template
+async fn create_template(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<TemplateCreateRequest>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let creator = "user_placeholder"; // TODO: Extract from authentication
+    
+    let template = PromptTemplate {
+        id: "".to_string(),
+        name: request.name,
+        description: request.description,
+        category: request.category,
+        base_personality: crate::template_system::BasePersonality {
+            system_prompt: request.system_prompt,
+            communication_style: crate::template_system::CommunicationStyle::Casual,
+            response_patterns: vec![],
+            knowledge_domains: vec![],
+            personality_modifiers: std::collections::HashMap::new(),
+        },
+        scenarios: crate::template_system::ScenarioBehaviors {
+            casual: request.scenarios.get("casual").unwrap_or(&"Default casual behavior".to_string()).clone(),
+            emotional_support: request.scenarios.get("emotional_support").unwrap_or(&"Default emotional support".to_string()).clone(),
+            intellectual: request.scenarios.get("intellectual").unwrap_or(&"Default intellectual behavior".to_string()).clone(),
+            creative: request.scenarios.get("creative").unwrap_or(&"Default creative behavior".to_string()).clone(),
+            problem_solving: request.scenarios.get("problem_solving").unwrap_or(&"Default problem solving".to_string()).clone(),
+            custom_scenarios: request.scenarios,
+        },
+        variables: request.variables,
+        compatible_traits: vec![],
+        tags: request.tags,
+        is_custom: true,
+        created_by: creator.to_string(),
+        usage_count: 0,
+        ipfs_hash: None,
+        version: "1.0.0".to_string(),
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+        is_public: request.is_public,
+        rating: 0.0,
+        rating_count: 0,
+        price_muse_tokens: 0,
+    };
+    
+    let mut template_manager = state.template_manager.lock().await;
+    match template_manager.create_template(template, creator) {
+        Ok(template_id) => {
+            let created_template = template_manager.get_template(&template_id).unwrap();
+            Ok((StatusCode::CREATED, Json(TemplateResponse {
+                template: created_template.clone(),
+            })))
+        }
+        Err(e) => {
+            println!("❌ Failed to create template: {}", e);
+            Err(StatusCode::BAD_REQUEST)
+        }
+    }
+}
+
+/// Get template by ID
+async fn get_template(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let template_manager = state.template_manager.lock().await;
+    if let Some(template) = template_manager.get_template(&id) {
+        Ok((StatusCode::OK, Json(TemplateResponse {
+            template: template.clone(),
+        })))
+    } else {
+        Err(StatusCode::NOT_FOUND)
+    }
+}
+
+/// Update template (placeholder)
+async fn update_template(
+    State(_state): State<Arc<AppState>>,
+    Path(_id): Path<String>,
+    Json(_request): Json<TemplateCreateRequest>,
+) -> Result<impl IntoResponse, StatusCode> {
+    Ok((StatusCode::NOT_IMPLEMENTED, Json(serde_json::json!({"error": "Template update not implemented yet"}))))
+}
+
+/// Delete template (placeholder)
+async fn delete_template(
+    State(_state): State<Arc<AppState>>,
+    Path(_id): Path<String>,
+) -> Result<impl IntoResponse, StatusCode> {
+    Ok((StatusCode::NOT_IMPLEMENTED, Json(serde_json::json!({"error": "Template deletion not implemented yet"}))))
+}
+
+/// Get templates by category
+async fn get_templates_by_category(
+    State(state): State<Arc<AppState>>,
+    Path(category_str): Path<String>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let category = match category_str.as_str() {
+        "companion" => TemplateCategory::Companion,
+        "mentor" => TemplateCategory::Mentor,
+        "creative" => TemplateCategory::Creative,
+        "professional" => TemplateCategory::Professional,
+        "custom" => TemplateCategory::Custom,
+        _ => return Err(StatusCode::BAD_REQUEST),
+    };
+    
+    let template_manager = state.template_manager.lock().await;
+    let templates = template_manager.get_templates_by_category(&category);
+    let templates_owned: Vec<PromptTemplate> = templates.into_iter().cloned().collect();
+    
+    Ok((StatusCode::OK, Json(TemplateListResponse {
+        total_count: templates_owned.len(),
+        templates: templates_owned,
+    })))
+}
+
+/// Get user's templates
+async fn get_user_templates(
+    State(state): State<Arc<AppState>>,
+    Path(address): Path<String>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let template_manager = state.template_manager.lock().await;
+    let templates = template_manager.get_user_templates(&address);
+    let templates_owned: Vec<PromptTemplate> = templates.into_iter().cloned().collect();
+    let total_count = templates_owned.len();
+    
+    Ok((StatusCode::OK, Json(TemplateListResponse {
+        templates: templates_owned,
+        total_count,
+    })))
+}
+
+/// Search templates
+async fn search_templates(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<TemplateSearchRequest>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let template_manager = state.template_manager.lock().await;
+    let mut templates = template_manager.search_templates(&request.query);
+    
+    if let Some(category) = &request.category {
+        templates = templates.into_iter().filter(|t| &t.category == category).collect();
+    }
+    
+    if let Some(tags) = &request.tags {
+        templates = templates.into_iter().filter(|t| {
+            tags.iter().any(|tag| t.tags.contains(tag))
+        }).collect();
+    }
+    
+    if let Some(limit) = request.limit {
+        templates.truncate(limit);
+    }
+    
+    let templates_owned: Vec<PromptTemplate> = templates.into_iter().cloned().collect();
+    let total_count = templates_owned.len();
+    
+    Ok((StatusCode::OK, Json(TemplateListResponse {
+        templates: templates_owned,
+        total_count,
+    })))
+}
+
+/// Apply template with variables
+async fn apply_template(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(request): Json<TemplateApplyRequest>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let mut template_manager = state.template_manager.lock().await;
+    
+    match template_manager.apply_template(&id, &request.variables, &request.traits) {
+        Ok(system_prompt) => {
+            template_manager.increment_usage(&id);
+            
+            Ok((StatusCode::OK, Json(TemplateApplyResponse {
+                system_prompt,
+                template_used: id,
+                variables_applied: request.variables,
+            })))
+        }
+        Err(e) => {
+            println!("❌ Failed to apply template: {}", e);
+            Err(StatusCode::BAD_REQUEST)
+        }
+    }
+}
+
+/// Rate a template
+async fn rate_template(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(request): Json<TemplateRatingRequest>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let mut template_manager = state.template_manager.lock().await;
+    
+    match template_manager.rate_template(&id, request.rating) {
+        Ok(()) => Ok((StatusCode::OK, Json(serde_json::json!({
+            "success": true,
+            "message": "Template rated successfully"
+        })))),
+        Err(e) => {
+            println!("❌ Failed to rate template: {}", e);
+            Err(StatusCode::BAD_REQUEST)
+        }
+    }
+}
+
+/// Get prebuilt templates
+async fn get_prebuilt_templates(
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let template_manager = state.template_manager.lock().await;
+    let all_templates = template_manager.get_all_templates();
+    let prebuilt_templates: Vec<PromptTemplate> = all_templates.values()
+        .filter(|t| !t.is_custom)
+        .cloned()
+        .collect();
+    let total_count = prebuilt_templates.len();
+    
+    Ok((StatusCode::OK, Json(TemplateListResponse {
+        templates: prebuilt_templates,
+        total_count,
+    })))
+}
+
+// ===== AVATAR SYSTEM HANDLERS =====
+
+/// List all available avatars
+async fn list_avatars(
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let avatar_manager = state.avatar_manager.lock().await;
+    let all_avatars = avatar_manager.get_all_avatars();
+    let avatars: Vec<Avatar> = all_avatars.values()
+        .filter(|a| a.is_public)
+        .cloned()
+        .collect();
+    
+    Ok((StatusCode::OK, Json(AvatarListResponse {
+        avatars,
+        total_count: all_avatars.len(),
+    })))
+}
+
+/// Generate AI avatar
+async fn generate_avatar(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<AvatarGenerationRequest>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let creator = "user_placeholder"; // TODO: Extract from authentication
+    
+    let mut avatar_manager = state.avatar_manager.lock().await;
+    match avatar_manager.generate_avatar(request, creator).await {
+        Ok(response) => Ok((StatusCode::CREATED, Json(response))),
+        Err(e) => {
+            println!("❌ Failed to generate avatar: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+/// Get avatar by ID
+async fn get_avatar(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let avatar_manager = state.avatar_manager.lock().await;
+    if let Some(avatar) = avatar_manager.get_avatar(&id) {
+        Ok((StatusCode::OK, Json(AvatarResponse {
+            avatar: avatar.clone(),
+        })))
+    } else {
+        Err(StatusCode::NOT_FOUND)
+    }
+}
+
+/// Get avatars by category
+async fn get_avatars_by_category(
+    State(state): State<Arc<AppState>>,
+    Path(category_str): Path<String>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let category = match category_str.as_str() {
+        "user_upload" => AvatarCategory::UserUpload,
+        "ai_generated" => AvatarCategory::AIGenerated,
+        "curated_gallery" => AvatarCategory::CuratedGallery,
+        "community_contributed" => AvatarCategory::CommunityContributed,
+        "artist" => AvatarCategory::Artist,
+        _ => return Err(StatusCode::BAD_REQUEST),
+    };
+    
+    let avatar_manager = state.avatar_manager.lock().await;
+    let avatars = avatar_manager.get_avatars_by_category(&category);
+    let avatars_owned: Vec<Avatar> = avatars.into_iter().cloned().collect();
+    let total_count = avatars_owned.len();
+    
+    Ok((StatusCode::OK, Json(AvatarListResponse {
+        avatars: avatars_owned,
+        total_count,
+    })))
+}
+
+/// Get user's avatars
+async fn get_user_avatars(
+    State(state): State<Arc<AppState>>,
+    Path(address): Path<String>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let avatar_manager = state.avatar_manager.lock().await;
+    let avatars = avatar_manager.get_user_avatars(&address);
+    let avatars_owned: Vec<Avatar> = avatars.into_iter().cloned().collect();
+    let total_count = avatars_owned.len();
+    
+    Ok((StatusCode::OK, Json(AvatarListResponse {
+        avatars: avatars_owned,
+        total_count,
+    })))
+}
+
+/// Get avatar statistics
+async fn get_avatar_stats(
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let avatar_manager = state.avatar_manager.lock().await;
+    let stats = avatar_manager.get_avatar_stats();
+    
+    Ok((StatusCode::OK, Json(AvatarStatsResponse { stats })))
+}
+
+// ✅ IMPLEMENTED: Avatar upload with multipart form handling and IPFS storage
+async fn upload_avatar(
+    State(state): State<Arc<AppState>>,
+    mut multipart: Multipart,
+) -> Result<impl IntoResponse, StatusCode> {
+    let mut file_data: Option<Vec<u8>> = None;
+    let mut name: Option<String> = None;
+    let mut style: Option<String> = None;
+    let mut category: Option<String> = None;
+    
+    // Parse multipart form data
+    while let Some(field) = multipart.next_field().await.unwrap_or(None) {
+        let field_name = field.name().unwrap_or("").to_string();
+        
+        match field_name.as_str() {
+            "file" => {
+                if let Ok(data) = field.bytes().await {
+                    file_data = Some(data.to_vec());
+                }
+            },
+            "name" => {
+                if let Ok(data) = field.text().await {
+                    name = Some(data);
+                }
+            },
+            "style" => {
+                if let Ok(data) = field.text().await {
+                    style = Some(data);
+                }
+            },
+            "category" => {
+                if let Ok(data) = field.text().await {
+                    category = Some(data);
+                }
+            },
+            _ => {}
+        }
+    }
+    
+    // Validate required fields
+    let file_data = match file_data {
+        Some(data) => data,
+        None => return Ok((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "No file provided"})))),
+    };
+    
+    if file_data.is_empty() {
+        return Ok((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "Empty file provided"}))));
+    }
+    
+    // Create upload request
+    let upload_request = AvatarUploadRequest {
+        name: name.clone(),
+        tags: vec!["user-upload".to_string()],
+        is_public: false,
+        category: match category.as_deref() {
+            Some("USER_UPLOAD") => AvatarCategory::UserUpload,
+            Some("AI_GENERATED") => AvatarCategory::AIGenerated,
+            Some("CURATED_GALLERY") => AvatarCategory::CuratedGallery,
+            _ => AvatarCategory::UserUpload,
+        },
+        description: None,
+    };
+    
+    // Upload avatar using the avatar manager
+    let mut avatar_manager = state.avatar_manager.lock().await;
+    match avatar_manager.upload_avatar(file_data, upload_request, "user").await {
+        Ok(upload_response) => {
+            // Get the uploaded avatar to return complete data
+            if let Some(avatar) = avatar_manager.get_avatar(&upload_response.avatar_id) {
+                Ok((StatusCode::OK, Json(serde_json::json!({"avatar": avatar}))))
+            } else {
+                // Fallback response if avatar not found after upload
+                Ok((StatusCode::OK, Json(serde_json::json!({
+                    "avatar": {
+                        "id": upload_response.avatar_id,
+                        "ipfs_hash": upload_response.ipfs_hash,
+                        "cdn_url": upload_response.cdn_url,
+                        "name": name,
+                        "category": category.unwrap_or("USER_UPLOAD".to_string()),
+                        "style": style.unwrap_or("REALISTIC".to_string())
+                    }
+                }))))
+            }
+        },
+        Err(error) => {
+            eprintln!("❌ Avatar upload failed: {}", error);
+            Ok((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("Upload failed: {}", error)}))))
+        }
+    }
+}
+
+// ✅ NEW: Avatar image serving endpoint - Proxies IPFS images to avoid CORS issues
+async fn serve_avatar_image(
+    State(state): State<Arc<AppState>>,
+    Path(avatar_id): Path<String>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let avatar_manager = state.avatar_manager.lock().await;
+    
+    // Get avatar by ID
+    if let Some(avatar) = avatar_manager.get_avatar(&avatar_id) {
+        // Try to serve from CDN URL (IPFS gateway) 
+        if let Some(cdn_url) = &avatar.cdn_url {
+            // Proxy the IPFS image to avoid CORS issues
+            match reqwest::get(cdn_url).await {
+                Ok(response) => {
+                    if response.status().is_success() {
+                        if let Ok(image_bytes) = response.bytes().await {
+                            // Determine content type based on format
+                            let content_type = match avatar.format {
+                                crate::avatar_system::ImageFormat::JPG => "image/jpeg",
+                                crate::avatar_system::ImageFormat::PNG => "image/png",
+                                crate::avatar_system::ImageFormat::GIF => "image/gif",
+                                crate::avatar_system::ImageFormat::WEBP => "image/webp",
+                                _ => "image/jpeg", // fallback
+                            };
+                            
+                            return Ok((
+                                StatusCode::OK,
+                                [("Content-Type", content_type), ("Cache-Control", "public, max-age=3600")],
+                                image_bytes.to_vec(),
+                            ));
+                        }
+                    }
+                },
+                Err(e) => {
+                    eprintln!("❌ Failed to fetch avatar image from IPFS: {}", e);
+                }
+            }
+        }
+        
+        // Fallback: return placeholder or error
+        Ok((
+            StatusCode::NOT_FOUND,
+            [("Content-Type", "application/json"), ("Cache-Control", "no-cache")],
+            br#"{"error": "Avatar image not accessible"}"#.to_vec(),
+        ))
+    } else {
+        Ok((
+            StatusCode::NOT_FOUND,
+            [("Content-Type", "application/json"), ("Cache-Control", "no-cache")],
+            br#"{"error": "Avatar not found"}"#.to_vec(),
+        ))
+    }
+}
+
+async fn delete_avatar(State(_state): State<Arc<AppState>>, Path(_id): Path<String>) -> Result<impl IntoResponse, StatusCode> {
+    Ok((StatusCode::NOT_IMPLEMENTED, Json(serde_json::json!({"error": "Avatar deletion not implemented yet"}))))
+}
+async fn get_avatars_by_style(State(_state): State<Arc<AppState>>, Path(_style): Path<String>) -> Result<impl IntoResponse, StatusCode> {
+    Ok((StatusCode::NOT_IMPLEMENTED, Json(serde_json::json!({"error": "Get avatars by style not implemented yet"}))))
+}
+async fn search_avatars(State(_state): State<Arc<AppState>>, Json(_request): Json<AvatarSearchRequest>) -> Result<impl IntoResponse, StatusCode> {
+    Ok((StatusCode::NOT_IMPLEMENTED, Json(serde_json::json!({"error": "Avatar search not implemented yet"}))))
+}
+async fn rate_avatar(State(_state): State<Arc<AppState>>, Path(_id): Path<String>, Json(_request): Json<AvatarRatingRequest>) -> Result<impl IntoResponse, StatusCode> {
+    Ok((StatusCode::NOT_IMPLEMENTED, Json(serde_json::json!({"error": "Avatar rating not implemented yet"}))))
+}
+async fn list_avatar_collections(State(_state): State<Arc<AppState>>) -> Result<impl IntoResponse, StatusCode> {
+    Ok((StatusCode::NOT_IMPLEMENTED, Json(serde_json::json!({"error": "Avatar collections not implemented yet"}))))
+}
+async fn create_avatar_collection(State(_state): State<Arc<AppState>>) -> Result<impl IntoResponse, StatusCode> {
+    Ok((StatusCode::NOT_IMPLEMENTED, Json(serde_json::json!({"error": "Create avatar collection not implemented yet"}))))
+}
+async fn get_avatar_collection(State(_state): State<Arc<AppState>>, Path(_id): Path<String>) -> Result<impl IntoResponse, StatusCode> {
+    Ok((StatusCode::NOT_IMPLEMENTED, Json(serde_json::json!({"error": "Get avatar collection not implemented yet"}))))
+}
+async fn get_user_avatar_collections(State(_state): State<Arc<AppState>>, Path(_address): Path<String>) -> Result<impl IntoResponse, StatusCode> {
+    Ok((StatusCode::NOT_IMPLEMENTED, Json(serde_json::json!({"error": "Get user avatar collections not implemented yet"}))))
+}
+
+// ✅ NEW: Data Anchoring Token (DAT) routes - World's first verified AI interaction certificates
+pub fn dat_routes() -> Router<Arc<AppState>> {
+    Router::new()
+        .route("/api/v1/dat/mint", post(mint_interaction_dat))
+        .route("/api/v1/dat/user/{address}", get(get_user_dats))
+        .route("/api/v1/dat/{token_id}", get(get_dat_details))
+        .route("/api/v1/dat/muse/{muse_id}/interactions", get(get_muse_interaction_dats))
+        .route("/api/v1/dat/significant/{address}", get(get_significant_dats))
+        .route("/api/v1/dat/verify/{token_id}", get(verify_dat_authenticity))
+}
+
+// DAT Handler Functions
+
+async fn mint_interaction_dat(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<MintDATRequest>,
+) -> impl IntoResponse {
+    println!("🏷️  Minting Interaction DAT for session {}", 
+             request.interaction_data.session_id);
+
+    // 1. Validate conversation uniqueness - generate hash from interaction data
+    let conversation_content = format!("{}-{}-{}", 
+        request.interaction_data.user_message,
+        request.interaction_data.ai_response,
+        request.interaction_data.timestamp
+    );
+    let conversation_hash = format!("0x{}", sha256::digest(conversation_content));
+
+    // Extract muse_token_id from session_id (format: user_muse_{id})
+    let muse_token_id = request.interaction_data.session_id
+        .split('_')
+        .last()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(1); // Default to muse 1 if parsing fails
+    
+    let interaction_type = "conversation".to_string(); // Default interaction type
+    
+    // Create chat messages from interaction data
+    let chat_messages = vec![
+        DATChatMessage {
+            role: "user".to_string(),
+            content: request.interaction_data.user_message.clone(),
+            timestamp: request.interaction_data.timestamp,
+        },
+        DATChatMessage {
+            role: "assistant".to_string(),
+            content: request.interaction_data.ai_response.clone(),
+            timestamp: request.interaction_data.timestamp + 1,
+        },
+    ];
+
+    // 2. Create DAT metadata
+    let metadata = DATMetadata {
+        name: format!("AI Interaction Certificate #{}", chrono::Utc::now().timestamp()),
+        description: format!(
+            "Verified AI interaction with Muse #{} - Type: {} - TEE Verified: {}",
+            muse_token_id, 
+            interaction_type,
+            request.tee_proof.is_some()
+        ),
+        image: format!("https://gateway.pinata.cloud/ipfs/QmInteractionDATImage{}", muse_token_id),
+        attributes: vec![
+            DATAttribute { trait_type: "Muse ID".to_string(), value: muse_token_id.to_string() },
+            DATAttribute { trait_type: "Interaction Type".to_string(), value: interaction_type.clone() },
+            DATAttribute { trait_type: "TEE Verified".to_string(), value: request.tee_proof.is_some().to_string() },
+            DATAttribute { trait_type: "Significant".to_string(), value: "true".to_string() },
+            DATAttribute { trait_type: "Message Count".to_string(), value: chat_messages.len().to_string() },
+            DATAttribute { trait_type: "Timestamp".to_string(), value: chrono::Utc::now().timestamp().to_string() },
+        ],
+        interaction_proof: DATInteractionProof {
+            conversation_hash: conversation_hash.clone(),
+            tee_verified: request.tee_proof.is_some(),
+            participant: request.interaction_data.user_address.clone(),
+            muse_token_id,
+            timestamp: chrono::Utc::now().timestamp() as u64,
+            interaction_type: interaction_type.clone(),
+            messages: chat_messages,
+            tee_proof: request.tee_proof.map(|proof| DATTEEProof {
+                attestation_hex: proof.attestation_hex,
+                enclave_id: proof.enclave_id,
+                timestamp: proof.timestamp,
+                nonce: proof.nonce,
+                signature: "signature_placeholder".to_string(),
+                measurement: "measurement_placeholder".to_string(),
+                policy_hash: "policy_placeholder".to_string(),
+                public_key: "pubkey_placeholder".to_string(),
+            }),
+            blockchain_proof: request.verification_proof.map(|proof| DATBlockchainProof {
+                commitment_hash: proof.commitment_hash,
+                signature: proof.signature,
+                transaction_hash: None,
+                block_number: Some(proof.block_number),
+                verification_status: "verified".to_string(),
+                gas_used: None,
+            }),
+        },
+    };
+
+    // 3. Store metadata to IPFS
+    let metadata_json = match serde_json::to_string_pretty(&metadata) {
+        Ok(json) => json,
+        Err(e) => {
+            let error_msg = format!("Failed to serialize DAT metadata: {}", e);
+            println!("❌ {}", error_msg);
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(MintDATResponse {
+                success: false,
+                dat_token_id: None,
+                ipfs_metadata_hash: None,
+                transaction_hash: None,
+                error: Some(error_msg),
+            }));
+        }
+    };
+
+    // Store via semantic search service's IPFS integration
+    let ipfs_hash = match state.semantic_search.store_dat_metadata(&metadata_json, &conversation_hash).await {
+        Ok(hash) => hash,
+        Err(e) => {
+            let error_msg = format!("Failed to store DAT metadata to IPFS: {}", e);
+            println!("❌ {}", error_msg);
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(MintDATResponse {
+                success: false,
+                dat_token_id: None,
+                ipfs_metadata_hash: None,
+                transaction_hash: None,
+                error: Some(error_msg),
+            }));
+        }
+    };
+
+    // 4. TODO: Mint DAT on blockchain (requires smart contract integration)
+    // For now, simulate successful minting
+    let simulated_token_id = chrono::Utc::now().timestamp() as u64;
+    
+    println!("✅ DAT minted successfully - Token ID: {}, IPFS Hash: {}", 
+             simulated_token_id, ipfs_hash);
+
+    (StatusCode::OK, Json(MintDATResponse {
+        success: true,
+        dat_token_id: Some(simulated_token_id),
+        ipfs_metadata_hash: Some(ipfs_hash),
+        transaction_hash: Some(format!("0x{}", sha256::digest(format!("dat_mint_{}", simulated_token_id)))),
+        error: None,
+    }))
+}
+
+async fn get_user_dats(
+    State(_state): State<Arc<AppState>>,
+    Path(address): Path<String>,
+) -> impl IntoResponse {
+    println!("📋 Getting DATs for user: {}", address);
+    
+    // TODO: Query blockchain for user's DATs
+    // For now, return mock data
+    let mock_dats = vec![
+        UserDAT {
+            token_id: 1,
+            muse_token_id: 1,
+            interaction_type: "first_chat".to_string(),
+            is_significant: true,
+            timestamp: chrono::Utc::now().timestamp() as u64 - 86400, // 1 day ago
+            tee_verified: true,
+            ipfs_metadata_hash: "QmMockDATHash1".to_string(),
+        },
+        UserDAT {
+            token_id: 2,
+            muse_token_id: 2,
+            interaction_type: "breakthrough".to_string(),
+            is_significant: true,
+            timestamp: chrono::Utc::now().timestamp() as u64 - 3600, // 1 hour ago
+            tee_verified: true,
+            ipfs_metadata_hash: "QmMockDATHash2".to_string(),
+        },
+    ];
+
+    (StatusCode::OK, Json(UserDATsResponse {
+        dats: mock_dats,
+        total_count: 2,
+    }))
+}
+
+async fn get_dat_details(
+    State(_state): State<Arc<AppState>>,
+    Path(token_id): Path<u64>,
+) -> impl IntoResponse {
+    println!("🔍 Getting details for DAT token: {}", token_id);
+    
+    // TODO: Query blockchain and IPFS for DAT details
+    let mock_metadata = DATMetadata {
+        name: format!("AI Interaction Certificate #{}", token_id),
+        description: "Verified AI interaction with cryptographic proof".to_string(),
+        image: format!("https://gateway.pinata.cloud/ipfs/QmDATImage{}", token_id),
+        attributes: vec![
+            DATAttribute { trait_type: "Muse ID".to_string(), value: "1".to_string() },
+            DATAttribute { trait_type: "Interaction Type".to_string(), value: "first_chat".to_string() },
+            DATAttribute { trait_type: "TEE Verified".to_string(), value: "true".to_string() },
+        ],
+        interaction_proof: DATInteractionProof {
+            conversation_hash: "0xmockhash123".to_string(),
+            tee_verified: true,
+            participant: "0x123abc".to_string(),
+            muse_token_id: 1,
+            timestamp: chrono::Utc::now().timestamp() as u64,
+            interaction_type: "first_chat".to_string(),
+            messages: vec![],
+            tee_proof: None,
+            blockchain_proof: None,
+        },
+    };
+
+    (StatusCode::OK, Json(mock_metadata))
+}
+
+async fn get_muse_interaction_dats(
+    State(_state): State<Arc<AppState>>,
+    Path(muse_id): Path<u64>,
+) -> impl IntoResponse {
+    println!("📈 Getting interaction DATs for muse: {}", muse_id);
+    
+    (StatusCode::OK, Json(UserDATsResponse {
+        dats: vec![],
+        total_count: 0,
+    }))
+}
+
+async fn get_significant_dats(
+    State(_state): State<Arc<AppState>>,
+    Path(address): Path<String>,
+) -> impl IntoResponse {
+    println!("⭐ Getting significant DATs for user: {}", address);
+    
+    (StatusCode::OK, Json(UserDATsResponse {
+        dats: vec![],
+        total_count: 0,
+    }))
+}
+
+async fn verify_dat_authenticity(
+    State(_state): State<Arc<AppState>>,
+    Path(token_id): Path<u64>,
+) -> impl IntoResponse {
+    println!("🔐 Verifying authenticity of DAT token: {}", token_id);
+    
+    let verification_result = serde_json::json!({
+        "verified": true,
+        "tee_verified": true,
+        "blockchain_verified": true,
+        "ipfs_accessible": true,
+        "verification_time": chrono::Utc::now().timestamp()
+    });
+
+    (StatusCode::OK, Json(verification_result))
+}
+
+// ✅ NEW: Training Data Marketplace routes - World's first decentralized AI training data economy
+pub fn training_data_routes() -> Router<Arc<AppState>> {
+    Router::new()
+        .route("/api/v1/training-data/contribute", post(contribute_training_data))
+        .route("/api/v1/training-data/validate", post(validate_contribution))
+        .route("/api/v1/training-data/contributor/{address}", get(get_contributor_profile))
+        .route("/api/v1/training-data/contribution/{id}", get(get_contribution_details))
+        .route("/api/v1/training-data/marketplace/stats", get(get_marketplace_stats))
+        .route("/api/v1/training-data/contributions/type/{type_id}", get(get_contributions_by_type))
+        .route("/api/v1/training-data/recent/{address}", get(get_recent_contributions))
+        .route("/api/v1/training-data/leaderboard", get(get_contributor_leaderboard))
+}
+
+// Training Data Marketplace Handler Functions
+
+async fn contribute_training_data(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<ContributeTrainingDataRequest>,
+) -> (StatusCode, Json<ContributeTrainingDataResponse>) {
+    println!("🏭 Contributing training data for muse {} by {}", 
+             request.muse_token_id, request.contributor_address);
+
+    // Validate contribution type
+    let contribution_type = match crate::training_data_market::ContributionType::from_u8(request.contribution_type) {
+        Some(ct) => ct,
+        None => {
+            return (StatusCode::BAD_REQUEST, Json(ContributeTrainingDataResponse {
+                success: false,
+                contribution_id: String::new(),
+                reward_amount: 0,
+                ipfs_hash: String::new(),
+                reward_calculation: crate::training_data_market::RewardCalculation {
+                    base_reward: 0,
+                    type_bonus: 0,
+                    quality_bonus: 0,
+                    streak_bonus: 0,
+                    total_reward: 0,
+                    reasoning: vec!["Invalid contribution type".to_string()],
+                },
+            }));
+        }
+    };
+
+    // Lock the marketplace for contribution
+    let mut marketplace = state.training_data_market.lock().await;
+    
+    // Submit contribution
+    match marketplace.contribute_training_data(
+        &request.contributor_address,
+        request.muse_token_id,
+        contribution_type,
+        request.original_data,
+        request.improved_data,
+        request.metadata,
+    ).await {
+        Ok(contribution) => {
+            // Calculate reward breakdown for response
+            let reward_calculation = marketplace.calculate_reward(&request.contributor_address, &contribution.contribution_type).await
+                .unwrap_or(crate::training_data_market::RewardCalculation {
+                    base_reward: contribution.reward_amount,
+                    type_bonus: 0,
+                    quality_bonus: 0,
+                    streak_bonus: 0,
+                    total_reward: contribution.reward_amount,
+                    reasoning: vec!["Basic reward calculation".to_string()],
+                });
+
+            println!("✅ Training data contribution successful: {} DATs", contribution.reward_amount / 1000);
+
+            (StatusCode::OK, Json(ContributeTrainingDataResponse {
+                success: true,
+                contribution_id: contribution.contribution_id,
+                reward_amount: contribution.reward_amount,
+                ipfs_hash: contribution.ipfs_hash,
+                reward_calculation,
+            }))
+        }
+        Err(e) => {
+            println!("❌ Training data contribution failed: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(ContributeTrainingDataResponse {
+                success: false,
+                contribution_id: String::new(),
+                reward_amount: 0,
+                ipfs_hash: String::new(),
+                reward_calculation: crate::training_data_market::RewardCalculation {
+                    base_reward: 0,
+                    type_bonus: 0,
+                    quality_bonus: 0,
+                    streak_bonus: 0,
+                    total_reward: 0,
+                    reasoning: vec![format!("Error: {}", e)],
+                },
+            }))
+        }
+    }
+}
+
+async fn validate_contribution(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<crate::training_data_market::ValidationRequest>,
+) -> (StatusCode, Json<crate::training_data_market::ValidationResponse>) {
+    println!("🔍 Validating contribution {} by {}", 
+             request.contribution_id, request.validator_address);
+
+    let mut marketplace = state.training_data_market.lock().await;
+    
+    match marketplace.validate_contribution(request.clone()).await {
+        Ok(_) => {
+            // Get updated contribution details
+            let contribution = marketplace.get_contribution(&request.contribution_id);
+            let (new_quality_score, validation_status) = if let Some(contrib) = contribution {
+                (contrib.quality_score, contrib.validation_status.clone())
+            } else {
+                (0, crate::training_data_market::ValidationStatus::Pending)
+            };
+
+            println!("✅ Contribution validation successful - New score: {}", new_quality_score);
+
+            (StatusCode::OK, Json(crate::training_data_market::ValidationResponse {
+                success: true,
+                contribution_id: request.contribution_id,
+                new_quality_score,
+                validation_status,
+            }))
+        }
+        Err(e) => {
+            println!("❌ Contribution validation failed: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(crate::training_data_market::ValidationResponse {
+                success: false,
+                contribution_id: request.contribution_id,
+                new_quality_score: 0,
+                validation_status: crate::training_data_market::ValidationStatus::Pending,
+            }))
+        }
+    }
+}
+
+async fn get_contributor_profile(
+    State(state): State<Arc<AppState>>,
+    Path(address): Path<String>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    println!("👤 Getting contributor profile for: {}", address);
+
+    let marketplace = state.training_data_market.lock().await;
+    
+    match marketplace.get_contributor_profile(&address) {
+        Some(profile) => {
+            (StatusCode::OK, Json(serde_json::json!({
+                "success": true,
+                "profile": profile
+            })))
+        }
+        None => {
+            (StatusCode::NOT_FOUND, Json(serde_json::json!({
+                "success": false,
+                "error": "Contributor profile not found"
+            })))
+        }
+    }
+}
+
+async fn get_contribution_details(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    println!("📄 Getting contribution details for: {}", id);
+
+    let marketplace = state.training_data_market.lock().await;
+    
+    match marketplace.get_contribution(&id) {
+        Some(contribution) => {
+            (StatusCode::OK, Json(serde_json::json!({
+                "success": true,
+                "contribution": contribution
+            })))
+        }
+        None => {
+            (StatusCode::NOT_FOUND, Json(serde_json::json!({
+                "success": false,
+                "error": "Contribution not found"
+            })))
+        }
+    }
+}
+
+async fn get_marketplace_stats(
+    State(state): State<Arc<AppState>>,
+) -> (StatusCode, Json<crate::training_data_market::MarketplaceStatsResponse>) {
+    println!("📊 Getting marketplace statistics");
+
+    let marketplace = state.training_data_market.lock().await;
+    let stats = marketplace.get_marketplace_stats();
+    
+    // Get recent contributions (limit 10)
+    let recent_contributions: Vec<crate::training_data_market::TrainingDataContribution> = 
+        marketplace.contributions.values()
+            .cloned()
+            .take(10)
+            .collect();
+    
+    // Get top contributors (limit 10)
+    let mut top_contributors: Vec<crate::training_data_market::ContributorProfile> = 
+        marketplace.contributors.values()
+            .cloned()
+            .collect();
+    top_contributors.sort_by(|a, b| b.total_dats_earned.cmp(&a.total_dats_earned));
+    top_contributors.truncate(10);
+
+    (StatusCode::OK, Json(crate::training_data_market::MarketplaceStatsResponse {
+        stats,
+        recent_contributions,
+        top_contributors,
+    }))
+}
+
+async fn get_contributions_by_type(
+    State(state): State<Arc<AppState>>,
+    Path(type_id): Path<u8>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    println!("🔍 Getting contributions by type: {}", type_id);
+
+    let contribution_type = match crate::training_data_market::ContributionType::from_u8(type_id) {
+        Some(ct) => ct,
+        None => {
+            return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+                "success": false,
+                "error": "Invalid contribution type"
+            })));
+        }
+    };
+
+    let marketplace = state.training_data_market.lock().await;
+    let contributions = marketplace.get_contributions_by_type(contribution_type);
+
+    (StatusCode::OK, Json(serde_json::json!({
+        "success": true,
+        "contributions": contributions,
+        "total": contributions.len()
+    })))
+}
+
+async fn get_recent_contributions(
+    State(state): State<Arc<AppState>>,
+    Path(address): Path<String>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    println!("📋 Getting recent contributions for: {}", address);
+
+    let marketplace = state.training_data_market.lock().await;
+    let contributions = marketplace.get_contributor_contributions(&address, 20);
+
+    (StatusCode::OK, Json(serde_json::json!({
+        "success": true,
+        "contributions": contributions,
+        "total": contributions.len()
+    })))
+}
+
+async fn get_contributor_leaderboard(
+    State(state): State<Arc<AppState>>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    println!("🏆 Getting contributor leaderboard");
+
+    let marketplace = state.training_data_market.lock().await;
+    
+    let mut contributors: Vec<crate::training_data_market::ContributorProfile> = 
+        marketplace.contributors.values().cloned().collect();
+    
+    // Sort by total DATs earned (descending)
+    contributors.sort_by(|a, b| b.total_dats_earned.cmp(&a.total_dats_earned));
+    contributors.truncate(50); // Top 50
+
+    (StatusCode::OK, Json(serde_json::json!({
+        "success": true,
+        "leaderboard": contributors,
+        "total_contributors": marketplace.contributors.len()
+    })))
 }

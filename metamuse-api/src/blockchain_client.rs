@@ -131,6 +131,94 @@ abigen!(
     ]"#
 );
 
+// MuseRating contract ABI for AI Alignment Market
+abigen!(
+    MuseRatingContract,
+    r#"[
+        {
+            "inputs": [
+                {"internalType": "uint256", "name": "museId", "type": "uint256"},
+                {"internalType": "string", "name": "interactionHash", "type": "string"},
+                {"internalType": "uint8", "name": "qualityScore", "type": "uint8"},
+                {"internalType": "uint8", "name": "personalityAccuracy", "type": "uint8"},
+                {"internalType": "uint8", "name": "helpfulness", "type": "uint8"},
+                {"internalType": "string", "name": "feedback", "type": "string"}
+            ],
+            "name": "rateInteraction",
+            "outputs": [],
+            "stateMutability": "nonpayable",
+            "type": "function"
+        },
+        {
+            "inputs": [{"internalType": "uint256", "name": "museId", "type": "uint256"}],
+            "name": "getMuseStats",
+            "outputs": [
+                {"internalType": "uint256", "name": "totalRatings", "type": "uint256"},
+                {"internalType": "uint256", "name": "averageQuality", "type": "uint256"},
+                {"internalType": "uint256", "name": "averagePersonality", "type": "uint256"},
+                {"internalType": "uint256", "name": "averageHelpfulness", "type": "uint256"},
+                {"internalType": "uint256", "name": "totalRewards", "type": "uint256"},
+                {"internalType": "uint256", "name": "lastUpdated", "type": "uint256"}
+            ],
+            "stateMutability": "view",
+            "type": "function"
+        },
+        {
+            "inputs": [],
+            "name": "getPlatformStats",
+            "outputs": [
+                {"internalType": "uint256", "name": "totalUsers", "type": "uint256"},
+                {"internalType": "uint256", "name": "totalRatings", "type": "uint256"},
+                {"internalType": "uint256", "name": "totalRewardsDistributed", "type": "uint256"}
+            ],
+            "stateMutability": "view",
+            "type": "function"
+        },
+        {
+            "inputs": [{"internalType": "address", "name": "user", "type": "address"}],
+            "name": "userRewards",
+            "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+            "stateMutability": "view",
+            "type": "function"
+        },
+        {
+            "inputs": [
+                {"internalType": "address", "name": "user", "type": "address"},
+                {"internalType": "uint256", "name": "museId", "type": "uint256"},
+                {"internalType": "bytes32", "name": "interactionHash", "type": "bytes32"}
+            ],
+            "name": "hasRated",
+            "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+            "stateMutability": "view",
+            "type": "function"
+        },
+        {
+            "anonymous": false,
+            "inputs": [
+                {"indexed": true, "internalType": "bytes32", "name": "ratingId", "type": "bytes32"},
+                {"indexed": true, "internalType": "uint256", "name": "museId", "type": "uint256"},
+                {"indexed": true, "internalType": "address", "name": "rater", "type": "address"},
+                {"indexed": false, "internalType": "uint8", "name": "qualityScore", "type": "uint8"},
+                {"indexed": false, "internalType": "uint8", "name": "personalityAccuracy", "type": "uint8"},
+                {"indexed": false, "internalType": "uint8", "name": "helpfulness", "type": "uint8"},
+                {"indexed": false, "internalType": "uint256", "name": "rewardAmount", "type": "uint256"}
+            ],
+            "name": "InteractionRated",
+            "type": "event"
+        },
+        {
+            "anonymous": false,
+            "inputs": [
+                {"indexed": true, "internalType": "address", "name": "user", "type": "address"},
+                {"indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256"},
+                {"indexed": false, "internalType": "string", "name": "reason", "type": "string"}
+            ],
+            "name": "RewardDistributed",
+            "type": "event"
+        }
+    ]"#
+);
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MuseData {
     pub token_id: u64,
@@ -167,9 +255,12 @@ type SignerClient = SignerMiddleware<Provider<Http>, LocalWallet>;
 pub struct BlockchainClient {
     client: Arc<SignerClient>,
     contract: MetaMuseContract<SignerClient>,
+    rating_contract: MuseRatingContract<SignerClient>,
     contract_address: Address,
+    rating_contract_address: Address,
     // Cache for frequently accessed muse data
     muse_cache: RwLock<HashMap<u64, MuseData>>,
+    config: Config,
 }
 
 impl BlockchainClient {
@@ -184,17 +275,27 @@ impl BlockchainClient {
         // Create signing client
         let client = Arc::new(SignerMiddleware::new(provider, wallet));
         
-        // Parse contract address
+        // Parse contract addresses
         let contract_address = Address::from_str(&config.metamuse_contract_address)?;
+        let rating_contract_address = Address::from_str(&config.muse_rating_contract_address)?;
         
-        // Create contract instance
+        // Create contract instances
         let contract = MetaMuseContract::new(contract_address, client.clone());
+        let rating_contract = MuseRatingContract::new(rating_contract_address, client.clone());
+        
+        println!("🔗 Blockchain client initialized:");
+        println!("   MetaMuse contract: {}", contract_address);
+        println!("   MuseRating contract: {}", rating_contract_address);
+        println!("   Chain ID: {}", config.chain_id);
         
         Ok(Self {
             client,
             contract,
+            rating_contract,
             contract_address,
+            rating_contract_address,
             muse_cache: RwLock::new(HashMap::new()),
+            config: config.clone(),
         })
     }
     
@@ -575,7 +676,7 @@ impl BlockchainClient {
         Ok(event_data)
     }
     
-    // ✅ NEW: AI Alignment Market blockchain integration
+    // ✅ NEW: AI Alignment Market blockchain integration - REAL TRANSACTIONS!
     pub async fn submit_interaction_rating(
         &self,
         muse_id: u64,
@@ -587,92 +688,175 @@ impl BlockchainClient {
     ) -> Result<String> {
         println!("🏪 Submitting rating to blockchain for muse #{}", muse_id);
         println!("   Scores: Q={}, P={}, H={}", quality_score, personality_accuracy, helpfulness);
+        println!("   Contract: {}", self.rating_contract_address);
         
-        // PRODUCTION VERSION: Uncomment for real blockchain execution
-        /*
-        let rating_contract = MuseRating::new(
-            self.config.muse_rating_contract.parse::<Address>()?,
-            Arc::clone(&self.client)
+        // Validate input parameters
+        if quality_score < 1 || quality_score > 10 {
+            return Err(anyhow::anyhow!("Quality score must be between 1 and 10"));
+        }
+        if personality_accuracy < 1 || personality_accuracy > 10 {
+            return Err(anyhow::anyhow!("Personality accuracy must be between 1 and 10"));
+        }
+        if helpfulness < 1 || helpfulness > 10 {
+            return Err(anyhow::anyhow!("Helpfulness must be between 1 and 10"));
+        }
+        
+        println!("📋 Transaction parameters:");
+        println!("   Muse ID: {}", muse_id);
+        println!("   Interaction hash: {}", interaction_hash);
+        println!("   Feedback length: {}", feedback.len());
+        
+        // Check wallet balance first
+        let wallet_address = self.client.default_sender().unwrap_or_default();
+        let balance = self.client.get_balance(wallet_address, None).await?;
+        println!("🏦 Wallet address: {:?}", wallet_address);
+        println!("💰 Wallet balance: {} METIS", ethers::utils::format_ether(balance));
+        
+        // Check if we have sufficient balance for gas (minimum 0.001 METIS)
+        let min_balance = ethers::utils::parse_ether("0.001")?;
+        if balance < min_balance {
+            return Err(anyhow::anyhow!(
+                "Insufficient balance for gas fees. Current: {} METIS, Required: 0.001+ METIS. \
+                Please fund wallet {} with testnet METIS tokens from https://faucet.metis.io",
+                ethers::utils::format_ether(balance), wallet_address
+            ));
+        }
+        
+        // Call the real smart contract
+        let call = self.rating_contract.rate_interaction(
+            U256::from(muse_id),
+            interaction_hash.to_string(),
+            quality_score,
+            personality_accuracy,
+            helpfulness,
+            feedback.to_string(),
         );
         
-        let tx = rating_contract
-            .submit_rating(
-                muse_id.into(),
-                interaction_hash.to_string(),
-                quality_score,
-                personality_accuracy,
-                helpfulness,
-                feedback.to_string()
-            )
-            .send()
-            .await?;
-            
-        let receipt = tx.await?.ok_or_else(|| {
-            anyhow::anyhow!("Transaction failed")
-        })?;
+        // Estimate gas and set reasonable gas limit  
+        let gas_estimate = match call.estimate_gas().await {
+            Ok(gas) => gas,
+            Err(e) => {
+                println!("❌ Gas estimation failed: {}", e);
+                // Use a reasonable default gas limit
+                U256::from(500_000)
+            }
+        };
+        let gas_limit = gas_estimate * 150 / 100; // 50% buffer for safety
         
-        let tx_hash = format!("0x{:x}", receipt.transaction_hash);
-        println!("✅ Real blockchain transaction: {}", tx_hash);
-        Ok(tx_hash)
-        */
+        println!("💰 Estimated gas: {} ({} with buffer)", gas_estimate, gas_limit);
         
-        // HACKATHON DEMO VERSION: Mock transaction for fast, reliable demos
-        let mock_tx_hash = format!("0x{:064x}", 
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos() % (u64::MAX as u128)
-        );
+        // Send transaction to blockchain
+        let call_with_gas = call.gas(gas_limit);
+        let pending_tx = call_with_gas.send().await?;
+        let tx_hash = pending_tx.tx_hash();
         
-        println!("✅ Mock rating transaction: {}", mock_tx_hash);
-        Ok(mock_tx_hash)
+        println!("📤 Transaction sent: {:?}", tx_hash);
+        
+        // Wait for confirmation
+        let receipt = match pending_tx.await? {
+            Some(receipt) => {
+                let tx_hash_string = format!("{:?}", tx_hash);
+                
+                if receipt.status == Some(1.into()) {
+                    println!("✅ Real blockchain transaction confirmed: {}", tx_hash_string);
+                    println!("   Block: {:?}", receipt.block_number);
+                    println!("   Gas used: {:?}", receipt.gas_used);
+                    println!("   Status: Success");
+                    
+                    // Parse events for reward amount
+                    if let Some(gas_used) = receipt.gas_used {
+                        println!("💸 Transaction cost: {} gas", gas_used);
+                    }
+                    
+                    return Ok(tx_hash_string);
+                } else {
+                    println!("❌ Transaction failed with status: {:?}", receipt.status);
+                    return Err(anyhow::anyhow!("Transaction failed on-chain"));
+                }
+            }
+            None => {
+                println!("❌ Transaction failed - no receipt received");
+                return Err(anyhow::anyhow!("Transaction failed - no receipt"));
+            }
+        };
     }
 
     pub async fn get_muse_stats(&self, muse_id: u64) -> Result<MuseBlockchainStats> {
         println!("📊 Fetching blockchain stats for muse #{}", muse_id);
         
-        // Return mock stats for demo
+        // Get stats from the real smart contract
+        let stats = self.rating_contract.get_muse_stats(U256::from(muse_id)).call().await?;
+        
+        println!("✅ Retrieved muse stats from blockchain:");
+        println!("   Total ratings: {}", stats.0);
+        println!("   Average quality: {}", stats.1);
+        println!("   Average personality: {}", stats.2);
+        println!("   Average helpfulness: {}", stats.3);
+        println!("   Total rewards: {}", stats.4);
+        
         Ok(MuseBlockchainStats {
-            total_ratings: 15,
-            average_quality: 820, // Scaled by 100
-            average_personality: 760,
-            average_helpfulness: 850,
-            total_rewards: 195,
-            last_updated: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
+            total_ratings: stats.0.as_u64(),
+            average_quality: stats.1.as_u64(),
+            average_personality: stats.2.as_u64(),
+            average_helpfulness: stats.3.as_u64(),
+            total_rewards: stats.4.as_u64(),
+            last_updated: stats.5.as_u64(),
         })
     }
 
     pub async fn get_platform_stats(&self) -> Result<PlatformBlockchainStats> {
         println!("🌐 Fetching platform blockchain statistics");
         
+        // Get platform stats from the real smart contract
+        let stats = self.rating_contract.get_platform_stats().call().await?;
+        
+        println!("✅ Retrieved platform stats from blockchain:");
+        println!("   Total users: {}", stats.0);
+        println!("   Total ratings: {}", stats.1);
+        println!("   Total rewards distributed: {}", stats.2);
+        
         Ok(PlatformBlockchainStats {
-            total_users: 47,
-            total_ratings: 234,
-            total_rewards_distributed: 3018,
-            active_muses: 8,
+            total_users: stats.0.as_u64(),
+            total_ratings: stats.1.as_u64(),
+            total_rewards_distributed: stats.2.as_u64(),
+            active_muses: 8, // This would need additional contract logic to track
         })
     }
 
     pub async fn check_user_rating(&self, user_address: &str, muse_id: u64, interaction_hash: &str) -> Result<bool> {
         println!("🔍 Checking if user {} has rated muse {} interaction", user_address, muse_id);
         
-        // For demo, return false to allow all ratings
-        Ok(false)
+        // Parse user address and create interaction hash
+        let user_addr = Address::from_str(user_address)?;
+        let interaction_hash_bytes = ethers::utils::keccak256(interaction_hash.as_bytes());
+        
+        // Check with the real smart contract
+        let has_rated = self.rating_contract
+            .has_rated(user_addr, U256::from(muse_id), interaction_hash_bytes)
+            .call()
+            .await?;
+        
+        println!("✅ Blockchain check: User {} {} this interaction", 
+                 if has_rated { "has rated" } else { "has not rated" }, user_address);
+        
+        Ok(has_rated)
     }
 
     pub async fn get_user_rewards(&self, user_address: &str) -> Result<u64> {
         println!("💰 Fetching user rewards for {}", user_address);
         
-        // Mock user rewards based on address hash for consistency
-        let hash_sum: u64 = user_address.chars()
-            .map(|c| c as u64)
-            .sum();
+        // Parse user address
+        let user_addr = Address::from_str(user_address)?;
         
-        let mock_rewards = (hash_sum % 200) + 10; // 10-209 MUSE tokens
-        Ok(mock_rewards)
+        // Get user rewards from the real smart contract
+        let rewards = self.rating_contract.user_rewards(user_addr).call().await?;
+        
+        // Convert from Wei to MUSE tokens (divide by 10^18)
+        let reward_tokens = rewards.as_u128() / 1_000_000_000_000_000_000u128;
+        
+        println!("✅ User has earned {} MUSE tokens from blockchain", reward_tokens);
+        
+        Ok(reward_tokens as u64)
     }
 }
 

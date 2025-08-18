@@ -736,6 +736,12 @@ impl SemanticSearchService {
             }
         }
     }
+
+    /// ✅ Public method to store DAT metadata to IPFS
+    pub async fn store_dat_metadata(&self, metadata_json: &str, dat_id: &str) -> Result<String> {
+        println!("🏷️ Storing DAT metadata to IPFS");
+        self.store_content_to_ipfs(metadata_json, dat_id, "dat_metadata").await
+    }
 }
 
 /// Semantic search utilities
