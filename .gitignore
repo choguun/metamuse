@@ -18,3 +18,4 @@ Thumbs.db
 *.temp
 /metamuse-api/models
 /alith-main
+.claude/settings.local.json

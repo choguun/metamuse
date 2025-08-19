@@ -6,16 +6,16 @@ export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost
 // Blockchain Configuration
 export const CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID) || 133717; // Default to Metis Hyperion Testnet
 
-// Contract Addresses (deployed on Metis Hyperion Testnet - UPDATED ✅)
-// Block: 4755757, Deployer: 0x3BD91974F74dF7F014EAC3747e50819375667881
+// Contract Addresses (deployed on Metis Hyperion Testnet - FRESHLY DEPLOYED ✅)
+// Block: 4770619, Deployer: 0x3BD91974F74dF7F014EAC3747e50819375667881
 export const CONTRACTS: ContractAddresses = {
-  MetaMuse: (process.env.NEXT_PUBLIC_METAMUSE_CONTRACT || '0x5Ae3a5b00c18b96E0879c7C9F5EcD5247B86C0e0') as `0x${string}`,
-  CommitmentVerifier: (process.env.NEXT_PUBLIC_COMMITMENT_VERIFIER_CONTRACT || '0xB503F26D1edD1A59537472f7885fb3e2f8203fB6') as `0x${string}`,
-  MuseMemory: (process.env.NEXT_PUBLIC_MUSE_MEMORY_CONTRACT || '0xBf602Bd3837e0cdD5EE4EFeB06655030CD773202') as `0x${string}`,
-  MusePlugins: (process.env.NEXT_PUBLIC_MUSE_PLUGINS_CONTRACT || '0xfC4658aD392b45AE5edC0039dbf952620B104182') as `0x${string}`,
-  MuseRating: (process.env.NEXT_PUBLIC_MUSE_RATING_CONTRACT || '0xFE0B57A0aa6BF0d5bCd65719ac3eA61f5d8a0f5A') as `0x${string}`,
-  InteractionDAT: (process.env.NEXT_PUBLIC_INTERACTION_DAT_CONTRACT || '0x88B8c2c26Ba304eD643DD3791cf95E7bf78261e6') as `0x${string}`,
-  TrainingDataDAT: (process.env.NEXT_PUBLIC_TRAINING_DATA_DAT_CONTRACT || '0xe84ee106Aaf184b9137B4187d8d93675F7830072') as `0x${string}`,
+  MetaMuse: (process.env.NEXT_PUBLIC_METAMUSE_CONTRACT || '0x6A56DEE224faae61614942252b41A7057c661A70') as `0x${string}`,
+  CommitmentVerifier: (process.env.NEXT_PUBLIC_COMMITMENT_VERIFIER_CONTRACT || '0x4413a8F247879B910eEa2ABffFEf4E347dFC0F7C') as `0x${string}`,
+  MuseMemory: (process.env.NEXT_PUBLIC_MUSE_MEMORY_CONTRACT || '0x267ab6B2db6481B7787AbaDD603E1cFc9B1fA8A3') as `0x${string}`,
+  MusePlugins: (process.env.NEXT_PUBLIC_MUSE_PLUGINS_CONTRACT || '0x4250655F6e3cC3B6fea20d41d1F3Dd530805FccB') as `0x${string}`,
+  MuseRating: (process.env.NEXT_PUBLIC_MUSE_RATING_CONTRACT || '0x930564af248655d36E16DdE1d1988b8EF757C141') as `0x${string}`,
+  InteractionDAT: (process.env.NEXT_PUBLIC_INTERACTION_DAT_CONTRACT || '0x6D5CA6C00026b57c3231B36431860A7c721ef3FB') as `0x${string}`,
+  TrainingDataDAT: (process.env.NEXT_PUBLIC_TRAINING_DATA_DAT_CONTRACT || '0xa52CD50169A88c623034Da34a88346838b0eD4B7') as `0x${string}`,
 };
 
 // Contract ABIs - Simplified for frontend usage

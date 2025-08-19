@@ -166,18 +166,45 @@ contract MuseRating is ERC20, Ownable, ReentrancyGuard {
         uint256 totalRatings = stats.totalRatings;
         
         if (totalRatings == 0) {
-            // First rating for this muse
-            stats.averageQuality = quality * 100;
-            stats.averagePersonality = personality * 100;
-            stats.averageHelpfulness = helpfulness * 100;
+            // First rating for this muse - simple assignment
+            stats.averageQuality = uint256(quality) * 100;
+            stats.averagePersonality = uint256(personality) * 100;
+            stats.averageHelpfulness = uint256(helpfulness) * 100;
+            stats.totalRatings = 1;
         } else {
-            // Update running averages (scaled by 100 for precision)
-            stats.averageQuality = (stats.averageQuality * totalRatings + quality * 100) / (totalRatings + 1);
-            stats.averagePersonality = (stats.averagePersonality * totalRatings + personality * 100) / (totalRatings + 1);
-            stats.averageHelpfulness = (stats.averageHelpfulness * totalRatings + helpfulness * 100) / (totalRatings + 1);
+            // Use overflow-safe incremental averaging
+            // Instead of: new_avg = (old_avg * count + new_val) / (count + 1)
+            // Use: new_avg = old_avg + (new_val - old_avg) / (count + 1)
+            // This avoids large multiplications that can overflow
+            
+            uint256 newTotalRatings = totalRatings + 1;
+            uint256 qualityScaled = uint256(quality) * 100;
+            uint256 personalityScaled = uint256(personality) * 100;
+            uint256 helpfulnessScaled = uint256(helpfulness) * 100;
+            
+            // Incremental average update to prevent overflow
+            // Formula: new_avg = old_avg + (new_val - old_avg) / (count + 1)
+            if (qualityScaled >= stats.averageQuality) {
+                stats.averageQuality = stats.averageQuality + ((qualityScaled - stats.averageQuality) / newTotalRatings);
+            } else {
+                stats.averageQuality = stats.averageQuality - ((stats.averageQuality - qualityScaled) / newTotalRatings);
+            }
+            
+            if (personalityScaled >= stats.averagePersonality) {
+                stats.averagePersonality = stats.averagePersonality + ((personalityScaled - stats.averagePersonality) / newTotalRatings);
+            } else {
+                stats.averagePersonality = stats.averagePersonality - ((stats.averagePersonality - personalityScaled) / newTotalRatings);
+            }
+            
+            if (helpfulnessScaled >= stats.averageHelpfulness) {
+                stats.averageHelpfulness = stats.averageHelpfulness + ((helpfulnessScaled - stats.averageHelpfulness) / newTotalRatings);
+            } else {
+                stats.averageHelpfulness = stats.averageHelpfulness - ((stats.averageHelpfulness - helpfulnessScaled) / newTotalRatings);
+            }
+            
+            stats.totalRatings = newTotalRatings;
         }
         
-        stats.totalRatings += 1;
         stats.lastUpdated = block.timestamp;
         
         emit MuseStatsUpdated(
