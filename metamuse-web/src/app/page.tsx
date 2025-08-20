@@ -4,12 +4,33 @@ import Link from 'next/link';
 import { useAccount } from 'wagmi';
 import { motion } from 'framer-motion';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
+import dynamic from 'next/dynamic';
 
-export default function Home() {
+// Dynamic import of the client-only home component to prevent SSR issues
+const DynamicClientOnlyHome = dynamic(() => Promise.resolve(ClientOnlyHome), {
+  ssr: false,
+  loading: () => (
+    <section className="relative py-20 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto">
+        <div className="text-center">
+          <div className="h-20 bg-gray-800 animate-pulse rounded mb-6"></div>
+          <div className="h-8 bg-gray-800 animate-pulse rounded mb-8 max-w-3xl mx-auto"></div>
+          <div className="flex justify-center gap-4">
+            <div className="h-12 w-40 bg-gray-800 animate-pulse rounded"></div>
+            <div className="h-12 w-40 bg-gray-800 animate-pulse rounded"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  ),
+});
+
+// Client-only component for wagmi-dependent features
+function ClientOnlyHome() {
   const { isConnected } = useAccount();
-
+  
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900/20 to-blue-900/20">
+    <>
       {/* Hero Section */}
       <section className="relative py-20 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
@@ -29,8 +50,8 @@ export default function Home() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8, delay: 0.2 }}
             >
-              Create unique AI companions with customizable personalities, 
-              persistent memory, and blockchain-verified interactions.
+              Create unique AI companions with verifiable blockchain interactions, 
+              persistent memory, and customizable personalities.
             </motion.p>
 
             <motion.div
@@ -40,36 +61,45 @@ export default function Home() {
               transition={{ duration: 0.8, delay: 0.4 }}
             >
               {isConnected ? (
-                <Link
-                  href="/create"
-                  className="bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700 text-white px-8 py-4 rounded-xl font-semibold text-lg transition-all duration-200 hover:scale-105"
-                >
-                  Create Your Muse
-                </Link>
-              ) : (
-                <ConnectButton.Custom>
-                  {({ openConnectModal }) => (
-                    <button
-                      onClick={openConnectModal}
-                      className="bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700 text-white px-8 py-4 rounded-xl font-semibold text-lg transition-all duration-200 hover:scale-105"
+                <>
+                  <Link href="/create">
+                    <motion.button
+                      className="bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700 text-white px-8 py-4 rounded-xl font-semibold text-lg transition-all duration-200 shadow-lg hover:shadow-xl"
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
                     >
-                      Connect & Create
-                    </button>
-                  )}
-                </ConnectButton.Custom>
+                      Create Your Muse
+                    </motion.button>
+                  </Link>
+                  <Link href="/gallery">
+                    <motion.button
+                      className="border border-purple-500 text-purple-400 hover:bg-purple-500 hover:text-white px-8 py-4 rounded-xl font-semibold text-lg transition-all duration-200"
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                    >
+                      View Gallery
+                    </motion.button>
+                  </Link>
+                </>
+              ) : (
+                <div className="flex flex-col items-center gap-4">
+                  <ConnectButton />
+                  <p className="text-gray-400 text-sm">Connect your wallet to get started</p>
+                </div>
               )}
-              
-              <Link
-                href="/explore"
-                className="border border-gray-600 hover:border-gray-500 text-gray-300 hover:text-white px-8 py-4 rounded-xl font-semibold text-lg transition-all duration-200 hover:scale-105"
-              >
-                Explore Muses
-              </Link>
             </motion.div>
           </div>
         </div>
       </section>
+    </>
+  );
+}
 
+export default function Home() {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900/20 to-blue-900/20">
+      <DynamicClientOnlyHome />
+      
       {/* Features Section */}
       <section className="py-20 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
@@ -102,49 +132,6 @@ export default function Home() {
               </motion.div>
             ))}
           </div>
-        </div>
-      </section>
-
-      {/* CTA Section */}
-      <section className="py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-r from-purple-800/30 to-blue-800/30">
-        <div className="max-w-4xl mx-auto text-center">
-          <motion.h2
-            className="text-3xl sm:text-4xl font-bold text-white mb-6"
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-            viewport={{ once: true }}
-          >
-            Ready to Create Your AI Companion?
-          </motion.h2>
-          
-          <motion.p
-            className="text-xl text-gray-300 mb-8"
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.2 }}
-            viewport={{ once: true }}
-          >
-            Join the future of AI interaction with verifiable, persistent, and truly personal digital companions.
-          </motion.p>
-          
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.4 }}
-            viewport={{ once: true }}
-          >
-            {isConnected ? (
-              <Link
-                href="/create"
-                className="inline-block bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700 text-white px-8 py-4 rounded-xl font-semibold text-lg transition-all duration-200 hover:scale-105"
-              >
-                Create Your First Muse
-              </Link>
-            ) : (
-              <ConnectButton />
-            )}
-          </motion.div>
         </div>
       </section>
     </div>

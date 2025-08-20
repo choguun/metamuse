@@ -589,6 +589,135 @@ export const api = {
         total_ipfs_storage: number;
       }>('/api/v1/dat/stats'),
   },
+
+  // Training Data Marketplace API
+  trainingData: {
+    // Contribute training data for AI improvement
+    contribute: (data: {
+      contributor_address: string;
+      muse_token_id: number;
+      contribution_type: number; // ContributionType enum value
+      original_data: any;
+      improved_data: any;
+      metadata: {
+        message_id?: string;
+        session_id?: string;
+        user_comment?: string;
+        difficulty_level: number; // 1-10
+        improvement_type: string; // "grammar", "accuracy", "creativity", etc.
+        reference_urls: string[];
+        tags: string[];
+      };
+    }) =>
+      apiClient.post<{
+        success: boolean;
+        contribution_id: string;
+        reward_amount: number;
+        ipfs_hash: string;
+        reward_calculation: {
+          base_reward: number;
+          type_bonus: number;
+          quality_bonus: number;
+          streak_bonus: number;
+          total_reward: number;
+          reasoning: string[];
+        };
+      }>('/api/v1/training-data/contribute', data),
+
+    // Validate a training data contribution
+    validate: (data: {
+      contribution_id: string;
+      validator_address: string;
+      approved: boolean;
+      quality_score: number; // 1-100
+      feedback?: string;
+    }) =>
+      apiClient.post<{
+        success: boolean;
+        contribution_id: string;
+        new_quality_score: number;
+        validation_status: 'Pending' | 'Validated' | 'Rejected' | 'UnderReview';
+      }>('/api/v1/training-data/validate', data),
+
+    // Get contributor profile and statistics
+    getContributor: (address: string) =>
+      apiClient.get<{
+        success: boolean;
+        profile: {
+          address: string;
+          total_contributions: number;
+          total_dats_earned: number;
+          average_quality_score: number;
+          validations_passed: number;
+          current_streak: number;
+          last_contribution: string;
+          quality_contributor_badge: boolean;
+          specializations: string[];
+          contribution_history: string[];
+        };
+      }>(`/api/v1/training-data/contributor/${address}`),
+
+    // Get contribution details
+    getContribution: (id: string) =>
+      apiClient.get<{
+        success: boolean;
+        contribution: {
+          contribution_id: string;
+          contributor_address: string;
+          muse_token_id: number;
+          contribution_type: number;
+          original_data: any;
+          improved_data: any;
+          metadata: any;
+          data_hash: string;
+          ipfs_hash: string;
+          timestamp: string;
+          quality_score: number;
+          reward_amount: number;
+          validation_status: string;
+        };
+      }>(`/api/v1/training-data/contribution/${id}`),
+
+    // Get marketplace statistics
+    getStats: () =>
+      apiClient.get<{
+        stats: {
+          total_contributions: number;
+          total_contributors: number;
+          total_rewards_distributed: number;
+          contributions_by_type: Record<string, number>;
+          average_quality_score: number;
+          active_contributors: number;
+          quality_contributors: number;
+        };
+        recent_contributions: any[];
+        top_contributors: any[];
+      }>('/api/v1/training-data/marketplace/stats'),
+
+    // Get contributions by type
+    getByType: (typeId: number, limit?: number) =>
+      apiClient.get<{
+        success: boolean;
+        contributions: any[];
+        contribution_type: string;
+      }>(`/api/v1/training-data/contributions/type/${typeId}${limit ? `?limit=${limit}` : ''}`),
+
+    // Get recent contributions for a user
+    getRecent: (address: string, limit?: number) =>
+      apiClient.get<{
+        success: boolean;
+        contributions: any[];
+        total: number;
+      }>(`/api/v1/training-data/recent/${address}${limit ? `?limit=${limit}` : ''}`),
+
+    // Get contributor leaderboard
+    getLeaderboard: () =>
+      apiClient.get<{
+        success: boolean;
+        leaderboard: any[];
+        total_contributors: number;
+      }>('/api/v1/training-data/leaderboard'),
+  },
 };
 
 // Helper functions for common API patterns

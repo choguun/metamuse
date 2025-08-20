@@ -210,9 +210,18 @@ export const PERSONALITY_COLORS = {
   empathy: '#10B981',    // Emerald
 } as const;
 
-export const NAVIGATION_ITEMS = [
-  { name: 'Home', href: '/' },
-  { name: 'Create Muse', href: '/create' },
-  { name: 'My Muses', href: '/gallery' },
-  { name: 'Explore', href: '/explore' },
-] as const;
+interface NavigationItem {
+  name: string;
+  href: string;
+  icon?: string;
+  badge?: string;
+}
+
+export const NAVIGATION_ITEMS: NavigationItem[] = [
+  { name: 'Home', href: '/', icon: '🏠' },
+  { name: 'Create Muse', href: '/create', icon: '✨' },
+  { name: 'My Muses', href: '/gallery', icon: '🎭' },
+  { name: 'Explore', href: '/explore', icon: '🔍' },
+  { name: 'Training Market', href: '/training', icon: '🏭' },
+  { name: 'My DATs', href: '/dats', icon: '🏷️' },
+];

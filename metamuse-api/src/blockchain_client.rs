@@ -799,7 +799,12 @@ impl BlockchainClient {
             average_quality: stats.1.as_u64(),
             average_personality: stats.2.as_u64(),
             average_helpfulness: stats.3.as_u64(),
-            total_rewards: stats.4.as_u64(),
+            // Convert from wei to MUSE tokens (divide by 10^18) and safely convert to u64
+            total_rewards: {
+                let wei_amount = stats.4;
+                let muse_amount = wei_amount / U256::from(10_u64.pow(18));
+                muse_amount.try_into().unwrap_or(0)
+            },
             last_updated: stats.5.as_u64(),
         })
     }
@@ -818,7 +823,12 @@ impl BlockchainClient {
         Ok(PlatformBlockchainStats {
             total_users: stats.0.as_u64(),
             total_ratings: stats.1.as_u64(),
-            total_rewards_distributed: stats.2.as_u64(),
+            // Convert from wei to MUSE tokens (divide by 10^18) and safely convert to u64
+            total_rewards_distributed: {
+                let wei_amount = stats.2;
+                let muse_amount = wei_amount / U256::from(10_u64.pow(18));
+                muse_amount.try_into().unwrap_or(0)
+            },
             active_muses: 8, // This would need additional contract logic to track
         })
     }

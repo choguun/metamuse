@@ -1,16 +1,155 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { useAccount } from 'wagmi';
 import { NAVIGATION_ITEMS } from '@/constants';
 import { motion } from 'framer-motion';
+import dynamic from 'next/dynamic';
+
+// Dynamic import of the entire wallet section to prevent SSR issues
+const DynamicWalletSection = dynamic(() => Promise.resolve(WalletSectionClient), {
+  ssr: false,
+  loading: () => (
+    <div className="h-10 w-32 bg-gray-800 animate-pulse rounded-lg"></div>
+  ),
+});
+
+// Client-only wallet section component
+function WalletSectionClient() {
+  // Import ConnectButton dynamically inside the component
+  const [ConnectButton, setConnectButton] = useState<any>(null);
+
+  useEffect(() => {
+    import('@rainbow-me/rainbowkit').then((mod) => {
+      setConnectButton(() => mod.ConnectButton);
+    });
+  }, []);
+
+  if (!ConnectButton) {
+    return (
+      <div className="h-10 w-32 bg-gray-800 animate-pulse rounded-lg"></div>
+    );
+  }
+
+  return (
+    <div className="flex items-center space-x-4">
+      <ConnectButton.Custom>
+        {({
+          account,
+          chain,
+          openAccountModal,
+          openChainModal,
+          openConnectModal,
+          authenticationStatus,
+          mounted,
+        }) => {
+          const ready = mounted && authenticationStatus !== 'loading';
+          const connected =
+            ready &&
+            account &&
+            chain &&
+            (!authenticationStatus ||
+              authenticationStatus === 'authenticated');
+
+          return (
+            <div
+              {...(!ready && {
+                'aria-hidden': true,
+                style: {
+                  opacity: 0,
+                  pointerEvents: 'none',
+                  userSelect: 'none',
+                },
+              })}
+            >
+              {(() => {
+                if (!connected) {
+                  return (
+                    <motion.button
+                      onClick={openConnectModal}
+                      type="button"
+                      className="bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200"
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      Connect Wallet
+                    </motion.button>
+                  );
+                }
+
+                if (chain.unsupported) {
+                  return (
+                    <motion.button
+                      onClick={openChainModal}
+                      type="button"
+                      className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      Wrong network
+                    </motion.button>
+                  );
+                }
+
+                return (
+                  <div className="flex items-center space-x-3">
+                    <motion.button
+                      onClick={openChainModal}
+                      style={{ display: 'flex', alignItems: 'center' }}
+                      type="button"
+                      className="bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-2 rounded-lg text-sm transition-colors"
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      {chain.hasIcon && (
+                        <div
+                          style={{
+                            background: chain.iconBackground,
+                            width: 16,
+                            height: 16,
+                            borderRadius: 999,
+                            overflow: 'hidden',
+                            marginRight: 8,
+                          }}
+                        >
+                          {chain.iconUrl && (
+                            <img
+                              alt={chain.name ?? 'Chain icon'}
+                              src={chain.iconUrl}
+                              style={{ width: 16, height: 16 }}
+                            />
+                          )}
+                        </div>
+                      )}
+                      {chain.name}
+                    </motion.button>
+
+                    <motion.button
+                      onClick={openAccountModal}
+                      type="button"
+                      className="bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200"
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      {account.displayName}
+                      {account.displayBalance
+                        ? ` (${account.displayBalance})`
+                        : ''}
+                    </motion.button>
+                  </div>
+                );
+              })()}
+            </div>
+          );
+        }}
+      </ConnectButton.Custom>
+    </div>
+  );
+}
 
 export function Navbar() {
   const pathname = usePathname();
-  const { isConnected } = useAccount();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   return (
@@ -39,13 +178,19 @@ export function Navbar() {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`relative px-3 py-2 text-sm font-medium transition-colors ${
+                className={`relative flex items-center space-x-2 px-3 py-2 text-sm font-medium transition-colors ${
                   pathname === item.href
                     ? 'text-purple-400'
                     : 'text-gray-300 hover:text-white'
                 }`}
               >
-                {item.name}
+                {item.icon && <span className="text-base">{item.icon}</span>}
+                <span>{item.name}</span>
+                {item.badge && (
+                  <span className="ml-1 px-1.5 py-0.5 text-xs bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-full font-medium">
+                    {item.badge}
+                  </span>
+                )}
                 {pathname === item.href && (
                   <motion.div
                     className="absolute bottom-0 left-0 right-0 h-0.5 bg-purple-400"
@@ -58,118 +203,9 @@ export function Navbar() {
             ))}
           </div>
 
-          {/* Wallet Connection */}
+          {/* Wallet Connection & Mobile Menu */}
           <div className="flex items-center space-x-4">
-            <ConnectButton.Custom>
-              {({
-                account,
-                chain,
-                openAccountModal,
-                openChainModal,
-                openConnectModal,
-                authenticationStatus,
-                mounted,
-              }) => {
-                const ready = mounted && authenticationStatus !== 'loading';
-                const connected =
-                  ready &&
-                  account &&
-                  chain &&
-                  (!authenticationStatus ||
-                    authenticationStatus === 'authenticated');
-
-                return (
-                  <div
-                    {...(!ready && {
-                      'aria-hidden': true,
-                      style: {
-                        opacity: 0,
-                        pointerEvents: 'none',
-                        userSelect: 'none',
-                      },
-                    })}
-                  >
-                    {(() => {
-                      if (!connected) {
-                        return (
-                          <motion.button
-                            onClick={openConnectModal}
-                            type="button"
-                            className="bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200"
-                            whileHover={{ scale: 1.02 }}
-                            whileTap={{ scale: 0.98 }}
-                          >
-                            Connect Wallet
-                          </motion.button>
-                        );
-                      }
-
-                      if (chain.unsupported) {
-                        return (
-                          <motion.button
-                            onClick={openChainModal}
-                            type="button"
-                            className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg font-medium transition-colors"
-                            whileHover={{ scale: 1.02 }}
-                            whileTap={{ scale: 0.98 }}
-                          >
-                            Wrong network
-                          </motion.button>
-                        );
-                      }
-
-                      return (
-                        <div className="flex items-center space-x-3">
-                          <motion.button
-                            onClick={openChainModal}
-                            style={{ display: 'flex', alignItems: 'center' }}
-                            type="button"
-                            className="bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-2 rounded-lg text-sm transition-colors"
-                            whileHover={{ scale: 1.02 }}
-                            whileTap={{ scale: 0.98 }}
-                          >
-                            {chain.hasIcon && (
-                              <div
-                                style={{
-                                  background: chain.iconBackground,
-                                  width: 16,
-                                  height: 16,
-                                  borderRadius: 999,
-                                  overflow: 'hidden',
-                                  marginRight: 8,
-                                }}
-                              >
-                                {chain.iconUrl && (
-                                  <img
-                                    alt={chain.name ?? 'Chain icon'}
-                                    src={chain.iconUrl}
-                                    style={{ width: 16, height: 16 }}
-                                  />
-                                )}
-                              </div>
-                            )}
-                            {chain.name}
-                          </motion.button>
-
-                          <motion.button
-                            onClick={openAccountModal}
-                            type="button"
-                            className="bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200"
-                            whileHover={{ scale: 1.02 }}
-                            whileTap={{ scale: 0.98 }}
-                          >
-                            {account.displayName}
-                            {account.displayBalance
-                              ? ` (${account.displayBalance})`
-                              : ''}
-                          </motion.button>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                );
-              }}
-            </ConnectButton.Custom>
+            <DynamicWalletSection />
 
             {/* Mobile menu button */}
             <button
@@ -216,14 +252,20 @@ export function Navbar() {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`block px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                  className={`flex items-center space-x-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
                     pathname === item.href
                       ? 'text-purple-400 bg-purple-900/20'
                       : 'text-gray-300 hover:text-white hover:bg-gray-800'
                   }`}
                   onClick={() => setIsMobileMenuOpen(false)}
                 >
-                  {item.name}
+                  {item.icon && <span className="text-base">{item.icon}</span>}
+                  <span>{item.name}</span>
+                  {item.badge && (
+                    <span className="ml-auto px-1.5 py-0.5 text-xs bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-full font-medium">
+                      {item.badge}
+                    </span>
+                  )}
                 </Link>
               ))}
             </div>

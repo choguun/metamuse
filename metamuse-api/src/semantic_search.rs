@@ -740,7 +740,114 @@ impl SemanticSearchService {
     /// ✅ Public method to store DAT metadata to IPFS
     pub async fn store_dat_metadata(&self, metadata_json: &str, dat_id: &str) -> Result<String> {
         println!("🏷️ Storing DAT metadata to IPFS");
-        self.store_content_to_ipfs(metadata_json, dat_id, "dat_metadata").await
+        let ipfs_hash = self.store_content_to_ipfs(metadata_json, dat_id, "dat_metadata").await?;
+        
+        // Parse metadata to extract user address for indexing
+        if let Ok(metadata_value) = serde_json::from_str::<serde_json::Value>(metadata_json) {
+            if let Some(user_address) = metadata_value
+                .get("interaction_proof")
+                .and_then(|proof| proof.get("participant"))
+                .and_then(|addr| addr.as_str()) {
+                
+                // Extract actual conversation data from the full metadata
+                let mut user_message = "Unknown".to_string();
+                let mut ai_response = "Unknown".to_string();
+                let session_id = "unknown".to_string();
+                
+                // Extract messages from interaction_proof.messages
+                if let Some(interaction_proof) = metadata_value.get("interaction_proof") {
+                    if let Some(messages) = interaction_proof.get("messages").and_then(|v| v.as_array()) {
+                        for message in messages {
+                            if let Some(role) = message.get("role").and_then(|v| v.as_str()) {
+                                if let Some(content) = message.get("content").and_then(|v| v.as_str()) {
+                                    match role {
+                                        "user" => user_message = content.to_string(),
+                                        "assistant" => ai_response = content.to_string(),
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Store user -> DAT mapping for efficient retrieval using embeddings store as temporary storage
+                let user_dat_key = format!("user_dats_{}", user_address.to_lowercase());
+                let dat_entry_text = serde_json::json!({
+                    "dat_id": dat_id,
+                    "ipfs_hash": ipfs_hash,
+                    "user_address": user_address,
+                    "timestamp": chrono::Utc::now().timestamp(),
+                    "user_message": user_message,
+                    "ai_response": ai_response,
+                    "session_id": session_id,
+                    "metadata_sample": {
+                        "name": metadata_value.get("name"),
+                        "description": metadata_value.get("description"),
+                    }
+                }).to_string();
+                
+                // Store DAT info as a "semantic embedding" entry for retrieval
+                // This is a temporary solution - in production this would be in a proper database
+                let mut dat_metadata = HashMap::new();
+                dat_metadata.insert("type".to_string(), "user_dat".to_string());
+                dat_metadata.insert("user_address".to_string(), user_address.to_lowercase());
+                dat_metadata.insert("dat_id".to_string(), dat_id.to_string());
+                dat_metadata.insert("content".to_string(), dat_entry_text); // Store full DAT data in metadata
+                
+                let dat_embedding = VectorEmbedding {
+                    content_hash: user_dat_key,
+                    embedding: vec![0.0; 384], // Dummy embedding - we only need the metadata
+                    content_type: "user_dat".to_string(),
+                    timestamp: chrono::Utc::now().timestamp() as u64,
+                    metadata: dat_metadata,
+                };
+                
+                self.embeddings_store.write().await.push(dat_embedding);
+                println!("🏷️ Indexed DAT {} for user {}", dat_id, user_address);
+            }
+        }
+        
+        Ok(ipfs_hash)
+    }
+
+    /// ✅ Public method to retrieve DATs by user address
+    pub async fn get_user_dats(&self, user_address: &str) -> Result<Vec<serde_json::Value>> {
+        println!("🔍 Retrieving DATs for user: {}", user_address);
+        
+        let embeddings_store = self.embeddings_store.read().await;
+        let mut user_dats = Vec::new();
+        
+        // Search through embeddings for DAT entries for this user
+        for embedding in embeddings_store.iter() {
+            if let Some(entry_type) = embedding.metadata.get("type") {
+                if entry_type == "user_dat" {
+                    if let Some(stored_user_address) = embedding.metadata.get("user_address") {
+                        if stored_user_address == &user_address.to_lowercase() {
+                            // Parse the stored DAT data from metadata
+                            if let Some(dat_content) = embedding.metadata.get("content") {
+                                match serde_json::from_str::<serde_json::Value>(dat_content) {
+                                    Ok(dat_entry) => {
+                                        user_dats.push(dat_entry);
+                                    }
+                                    Err(e) => {
+                                        println!("⚠️ Failed to parse DAT data: {}", e);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        if user_dats.is_empty() {
+            println!("ℹ️ No DATs found for user {}", user_address);
+        } else {
+            println!("✅ Found {} DAT(s) for user {}", user_dats.len(), user_address);
+        }
+        
+        Ok(user_dats)
     }
 }
 

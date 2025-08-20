@@ -108,7 +108,7 @@ pub struct MintDATRequest {
 }
 
 // ✅ NEW: Interaction data from frontend
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct DATInteractionData {
     pub message_id: String,
     pub session_id: String,
@@ -220,6 +220,11 @@ pub struct UserDAT {
     pub timestamp: u64,
     pub tee_verified: bool,
     pub ipfs_metadata_hash: String,
+    pub interaction_data: Option<DATInteractionData>,
+    pub dat_id: String,
+    pub blockchain_verified: bool,
+    pub created_at: u64,
+    pub ipfs_hash: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -2441,6 +2446,7 @@ pub fn dat_routes() -> Router<Arc<AppState>> {
         .route("/api/v1/dat/muse/{muse_id}/interactions", get(get_muse_interaction_dats))
         .route("/api/v1/dat/significant/{address}", get(get_significant_dats))
         .route("/api/v1/dat/verify/{token_id}", get(verify_dat_authenticity))
+        .route("/api/v1/dat/stats", get(get_dat_platform_stats))
 }
 
 // DAT Handler Functions
@@ -2579,38 +2585,78 @@ async fn mint_interaction_dat(
 }
 
 async fn get_user_dats(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     Path(address): Path<String>,
 ) -> impl IntoResponse {
     println!("📋 Getting DATs for user: {}", address);
     
-    // TODO: Query blockchain for user's DATs
-    // For now, return mock data
-    let mock_dats = vec![
-        UserDAT {
-            token_id: 1,
-            muse_token_id: 1,
-            interaction_type: "first_chat".to_string(),
-            is_significant: true,
-            timestamp: chrono::Utc::now().timestamp() as u64 - 86400, // 1 day ago
-            tee_verified: true,
-            ipfs_metadata_hash: "QmMockDATHash1".to_string(),
-        },
-        UserDAT {
-            token_id: 2,
-            muse_token_id: 2,
-            interaction_type: "breakthrough".to_string(),
-            is_significant: true,
-            timestamp: chrono::Utc::now().timestamp() as u64 - 3600, // 1 hour ago
-            tee_verified: true,
-            ipfs_metadata_hash: "QmMockDATHash2".to_string(),
-        },
-    ];
+    // Query stored DATs via semantic search service
+    match state.semantic_search.get_user_dats(&address).await {
+        Ok(dat_entries) => {
+            if dat_entries.is_empty() {
+                println!("ℹ️ No DATs found for user {}", address);
+                return (StatusCode::OK, Json(UserDATsResponse {
+                    dats: vec![],
+                    total_count: 0,
+                }));
+            }
 
-    (StatusCode::OK, Json(UserDATsResponse {
-        dats: mock_dats,
-        total_count: 2,
-    }))
+            // Convert stored DAT entries to response format
+            let mut response_dats = Vec::new();
+            
+            for entry in &dat_entries {
+                if let (Some(dat_id), Some(ipfs_hash)) = (
+                    entry.get("dat_id").and_then(|v| v.as_str()),
+                    entry.get("ipfs_hash").and_then(|v| v.as_str()),
+                ) {
+                    // Parse the DAT ID as token ID (it should be a timestamp)
+                    let token_id = dat_id.parse::<u64>().unwrap_or(0);
+                    let creation_timestamp = entry.get("timestamp").and_then(|v| v.as_i64()).unwrap_or(0) as u64;
+                    
+                    // Extract actual interaction data from stored metadata
+                    let interaction_data = Some(DATInteractionData {
+                        message_id: format!("msg_{}", token_id),
+                        session_id: entry.get("session_id").and_then(|v| v.as_str()).unwrap_or("unknown").to_string(),
+                        user_message: entry.get("user_message").and_then(|v| v.as_str()).unwrap_or("Message not available").to_string(),
+                        ai_response: entry.get("ai_response").and_then(|v| v.as_str()).unwrap_or("Response not available").to_string(),
+                        timestamp: creation_timestamp,
+                        user_address: address.clone(),
+                    });
+                    
+                    response_dats.push(UserDAT {
+                        token_id,
+                        muse_token_id: 1, // Default - could be extracted from metadata if needed
+                        interaction_type: "conversation".to_string(),
+                        is_significant: true,
+                        timestamp: creation_timestamp,
+                        tee_verified: true, // Assume verified if stored
+                        ipfs_metadata_hash: ipfs_hash.to_string(),
+                        interaction_data,
+                        dat_id: dat_id.to_string(),
+                        blockchain_verified: true,
+                        created_at: creation_timestamp,
+                        ipfs_hash: ipfs_hash.to_string(),
+                    });
+                }
+            }
+
+            println!("✅ Found {} DAT(s) for user {}", response_dats.len(), address);
+            
+            (StatusCode::OK, Json(UserDATsResponse {
+                dats: response_dats,
+                total_count: dat_entries.len() as u64,
+            }))
+        }
+        Err(e) => {
+            let error_msg = format!("Failed to retrieve DATs for user {}: {}", address, e);
+            println!("❌ {}", error_msg);
+            
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(UserDATsResponse {
+                dats: vec![],
+                total_count: 0,
+            }))
+        }
+    }
 }
 
 async fn get_dat_details(
@@ -2684,6 +2730,33 @@ async fn verify_dat_authenticity(
     });
 
     (StatusCode::OK, Json(verification_result))
+}
+
+async fn get_dat_platform_stats(
+    State(_state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    println!("📊 Getting DAT platform statistics");
+    
+    // TODO: Query blockchain and database for real DAT statistics
+    // For now, return mock data that matches the frontend interface
+    let platform_stats = serde_json::json!({
+        "total_dats_minted": 1247,
+        "total_tee_verified": 892,
+        "total_blockchain_verified": 1156,
+        "active_users": 156,
+        "total_ipfs_storage": 52428800, // 50MB in bytes
+        "latest_dats": [
+            {
+                "dat_id": "dat_001",
+                "minted_at": chrono::Utc::now().timestamp(),
+                "verification_status": "verified"
+            }
+        ],
+        "verification_rate": 92.7,
+        "storage_efficiency": 98.3
+    });
+
+    (StatusCode::OK, Json(platform_stats))
 }
 
 // ✅ NEW: Training Data Marketplace routes - World's first decentralized AI training data economy

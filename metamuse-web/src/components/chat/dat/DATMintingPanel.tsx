@@ -154,6 +154,11 @@ export function DATMintingPanel({
         userAddress: address,
       });
 
+      console.log('🚨 ABOUT TO CALL BACKEND API: api.dat.mint()');
+      console.log('🚨 API Client object:', api);
+      console.log('🚨 API DAT object:', api.dat);
+      console.log('🚨 API DAT mint function:', typeof api.dat.mint);
+      
       // Call backend DAT minting API using the typed API client
       const result = await api.dat.mint({
         interaction_data: {
@@ -193,7 +198,12 @@ export function DATMintingPanel({
       }
 
     } catch (error) {
-      console.error('❌ DAT minting failed:', error);
+      console.error('🚨 CRITICAL ERROR: DAT minting failed completely:', error);
+      console.error('🚨 Error type:', typeof error);
+      console.error('🚨 Error constructor:', error?.constructor?.name);
+      console.error('🚨 Error message:', error instanceof Error ? error.message : String(error));
+      console.error('🚨 Full error object:', error);
+      
       setError(error instanceof Error ? error.message : 'DAT minting failed');
       
       // Mark current step as error
@@ -203,6 +213,7 @@ export function DATMintingPanel({
         )
       );
     } finally {
+      console.log('🚨 DAT minting process complete - setting isMinting to false');
       setIsMinting(false);
     }
   };
@@ -456,7 +467,10 @@ export function DATMintingPanel({
             <div className="flex space-x-3">
               {!mintedDAT && (
                 <button
-                  onClick={mintDAT}
+                  onClick={() => {
+                    console.log('🏷️ "Mint Interaction DAT" button clicked!');
+                    mintDAT();
+                  }}
                   disabled={isMinting || !address}
                   className={`flex-1 px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
                     isMinting || !address

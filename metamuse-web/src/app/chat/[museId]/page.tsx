@@ -21,11 +21,25 @@ import {
   TypingIndicator,
   DATMintingPanel
 } from '@/components/chat';
+import dynamic from 'next/dynamic';
+
+// Dynamic import of the chat page to prevent SSR issues
+const DynamicClientOnlyChatPage = dynamic(() => Promise.resolve(ClientOnlyChatPage), {
+  ssr: false,
+  loading: () => (
+    <div className="h-screen bg-gradient-to-br from-gray-900 via-purple-900/20 to-blue-900/20 flex items-center justify-center">
+      <div className="text-center">
+        <div className="w-16 h-16 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+        <p className="text-gray-400">Loading chat...</p>
+      </div>
+    </div>
+  ),
+});
 
 interface ChatMessage {
   id: string;
   content: string;
-  role: 'user' | 'muse';
+  role: 'user' | 'assistant';
   timestamp: Date;
   verification_status?: 'pending' | 'committed' | 'verified' | 'failed';
   tx_hash?: string;
@@ -62,12 +76,13 @@ interface InteractionSession {
   };
 }
 
-export default function ChatPage() {
+// Client-only wrapper for wagmi-dependent chat functionality
+function ClientOnlyChatPage() {
   const params = useParams();
   const router = useRouter();
   const museId = params.museId as string;
   const { isConnected, address } = useAccount();
-  
+
   const [muse, setMuse] = useState<MuseData | null>(null);
   const [session, setSession] = useState<InteractionSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -77,12 +92,19 @@ export default function ChatPage() {
   const [showVerificationDetails, setShowVerificationDetails] = useState(false);
   const [showMemorySidebar, setShowMemorySidebar] = useState(false);
   
-  // New Phase 2 visualization states
+  // New Phase 2 visualization states with persistence
   const [showTEEPanel, setShowTEEPanel] = useState(false);
   const [showChainOfThought, setShowChainOfThought] = useState(false);
   const [showSemanticMemory, setShowSemanticMemory] = useState(false);
   const [showMarketPanel, setShowMarketPanel] = useState(false);
-  const [currentRatingMessage, setCurrentRatingMessage] = useState<string | null>(null);
+  const [currentRatingMessage, setCurrentRatingMessage] = useState<string | null>(() => {
+    // Restore rating panel state from sessionStorage
+    if (typeof window !== 'undefined') {
+      const saved = sessionStorage.getItem(`ratingPanel-${museId}`);
+      return saved ? JSON.parse(saved) : null;
+    }
+    return null;
+  });
   const [semanticMemoryQuery, setSemanticMemoryQuery] = useState('');
   const [semanticMemories, setSemanticMemories] = useState<any[]>([]);
   const [marketStats, setMarketStats] = useState<{
@@ -139,6 +161,7 @@ export default function ChatPage() {
     }
   }, [isConnected, museId]);
 
+
   const fetchMarketStats = async () => {
     try {
       const stats = await api.rating.getPlatformStats();
@@ -159,10 +182,6 @@ export default function ChatPage() {
       });
     }
   };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [session?.messages]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -233,7 +252,7 @@ export default function ChatPage() {
           {
             id: '1',
             content: `Hello! I'm Muse #${museId}. I'm excited to chat with you! My personality is a unique blend of creativity and humor. What would you like to talk about?`,
-            role: 'muse',
+            role: 'assistant',
             timestamp: new Date(),
             verification_status: 'verified',
           }
@@ -303,7 +322,7 @@ export default function ChatPage() {
       const museResponse: ChatMessage = {
         id: result.interaction_id || (Date.now() + 1).toString(),
         content: result.response,
-        role: 'muse',
+        role: 'assistant',
         timestamp: new Date(),
         verification_status: 'committed',
         commitment_hash: result.commitment_hash,
@@ -334,7 +353,7 @@ export default function ChatPage() {
       const museResponse: ChatMessage = {
         id: (Date.now() + 1).toString(),
         content: mockResponse,
-        role: 'muse',
+        role: 'assistant',
         timestamp: new Date(),
         verification_status: 'verified',
       };
@@ -490,9 +509,9 @@ export default function ChatPage() {
         timestamp: msg.timestamp,
         context: `Chat message ${index + 1}`,
         ipfsHash: msg.commitment_hash || 'QmX...' + Math.random().toString(36).slice(2, 10),
-        emotions: msg.role === 'muse' ? ['thoughtful', 'helpful'] : ['curious'],
+        emotions: msg.role === 'assistant' ? ['thoughtful', 'helpful'] : ['curious'],
         tags: extractTagsFromContent(msg.content),
-        type: msg.role === 'muse' ? 'conversation' : 'experience' as const,
+        type: msg.role === 'assistant' ? 'conversation' : 'experience' as const,
         importance: msg.reasoning?.confidence_score ? msg.reasoning.confidence_score * 100 : Math.random() * 100,
       })) || [];
 
@@ -532,7 +551,14 @@ export default function ChatPage() {
 
   // ✅ NEW: AI Alignment Market - Rating System
   const [showRatingFor, setShowRatingFor] = useState<string | null>(null);
-  const [ratedMessages, setRatedMessages] = useState<Set<string>>(new Set());
+  const [ratedMessages, setRatedMessages] = useState<Set<string>>(() => {
+    // Restore rated messages state from localStorage (persistent across sessions)
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(`ratedMessages-${museId}`);
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    }
+    return new Set();
+  });
   const [ratingData, setRatingData] = useState({
     quality_score: 5,
     personality_accuracy: 5,
@@ -541,14 +567,69 @@ export default function ChatPage() {
   });
   const [isSubmittingRating, setIsSubmittingRating] = useState(false);
 
-  // ✅ NEW: DAT Minting System
-  const [showDATMintingFor, setShowDATMintingFor] = useState<string | null>(null);
-  const [mintedDATs, setMintedDATs] = useState<Set<string>>(new Set());
+  // ✅ NEW: DAT Minting System with persistence
+  const [showDATMintingFor, setShowDATMintingFor] = useState<string | null>(() => {
+    // Restore DAT minting panel state from sessionStorage
+    if (typeof window !== 'undefined') {
+      const saved = sessionStorage.getItem(`datPanel-${museId}`);
+      return saved ? JSON.parse(saved) : null;
+    }
+    return null;
+  });
+  const [mintedDATs, setMintedDATs] = useState<Set<string>>(() => {
+    // Restore minted DATs state from localStorage (persistent across sessions)
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(`mintedDATs-${museId}`);
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    }
+    return new Set();
+  });
   const [datMintingInProgress, setDATMintingInProgress] = useState<Set<string>>(new Set());
 
-  // ✅ NEW: Rating functions
+  // ✅ NEW: All useEffects after state declarations to prevent initialization errors
+  useEffect(() => {
+    scrollToBottom();
+  }, [session?.messages]);
+
+  // ✅ NEW: Persist panel states to prevent disappearing on refresh
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (currentRatingMessage) {
+        sessionStorage.setItem(`ratingPanel-${museId}`, JSON.stringify(currentRatingMessage));
+      } else {
+        sessionStorage.removeItem(`ratingPanel-${museId}`);
+      }
+    }
+  }, [currentRatingMessage, museId]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (showDATMintingFor) {
+        sessionStorage.setItem(`datPanel-${museId}`, JSON.stringify(showDATMintingFor));
+      } else {
+        sessionStorage.removeItem(`datPanel-${museId}`);
+      }
+    }
+  }, [showDATMintingFor, museId]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`ratedMessages-${museId}`, JSON.stringify(Array.from(ratedMessages)));
+    }
+  }, [ratedMessages, museId]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`mintedDATs-${museId}`, JSON.stringify(Array.from(mintedDATs)));
+    }
+  }, [mintedDATs, museId]);
+
+  // ✅ NEW: Rating functions with persistence
   const toggleRating = (messageId: string) => {
-    setShowRatingFor(showRatingFor === messageId ? null : messageId);
+    const newValue = showRatingFor === messageId ? null : messageId;
+    setShowRatingFor(newValue);
+    // Also update the persistent current rating message state
+    setCurrentRatingMessage(newValue);
     // Reset rating data when opening a new rating form
     if (showRatingFor !== messageId) {
       setRatingData({
@@ -625,32 +706,32 @@ export default function ChatPage() {
   };
 
   // ✅ NEW: DAT Minting functions
-  const toggleDATMinting = (messageId: string) => {
-    setShowDATMintingFor(showDATMintingFor === messageId ? null : messageId);
-  };
 
-  const handleDATMintSuccess = (messageId: string, datId: string, ipfsHash: string) => {
-    console.log('🎉 DAT minted successfully:', { messageId, datId, ipfsHash });
-    setMintedDATs(prev => new Set([...prev, messageId]));
-    setDATMintingInProgress(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(messageId);
-      return newSet;
-    });
-    // Close DAT minting panel after success
-    setShowDATMintingFor(null);
-  };
 
   const handleDATMintStart = (messageId: string) => {
     setDATMintingInProgress(prev => new Set([...prev, messageId]));
   };
 
+
+  const handleDATMintSuccess = (messageId: string, datId: string, ipfsHash: string) => {
+    console.log('✅ DAT minted successfully:', { messageId, datId, ipfsHash });
+    setMintedDATs(prev => new Set([...prev, messageId]));
+    setShowDATMintingFor(null);
+    setDATMintingInProgress(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(messageId);
+      return newSet;
+    });
+  };
+
   const isEligibleForDAT = (message: ChatMessage): boolean => {
-    // DATs can only be minted for AI responses that have some form of verification
-    return message.role === 'muse' && 
+    // DATs can only be minted for AI responses 
+    // More permissive eligibility - any AI response can potentially be minted as DAT
+    return message.role === 'assistant' && 
            !mintedDATs.has(message.id) &&
            !datMintingInProgress.has(message.id) &&
-           (message.tee_verified || message.verification_status === 'committed' || message.commitment_hash);
+           message.content && // Must have actual content
+           message.content.trim().length > 0; // Not empty
   };
 
   // ✅ NEW: Chain of Thought testing function
@@ -710,7 +791,7 @@ export default function ChatPage() {
       const cotResponse: ChatMessage = {
         id: result.interaction_id || (Date.now() + 1).toString(),
         content: result.response,
-        role: 'muse',
+        role: 'assistant',
         timestamp: new Date(),
         verification_status: 'committed',
         commitment_hash: result.commitment_hash,
@@ -759,7 +840,7 @@ export default function ChatPage() {
       const cotFallback: ChatMessage = {
         id: (Date.now() + 1).toString(),
         content: mockResponse,
-        role: 'muse',
+        role: 'assistant',
         timestamp: new Date(),
         verification_status: 'verified',
         reasoning: {
@@ -991,7 +1072,7 @@ export default function ChatPage() {
                       content: message.content,
                       sender: message.role,
                       timestamp: message.timestamp,
-                      emotions: message.role === 'muse' ? ['thoughtful', 'caring'] : undefined,
+                      emotions: message.role === 'assistant' ? ['thoughtful', 'caring'] : undefined,
                       confidence: message.reasoning?.confidence_score ? Math.round(message.reasoning.confidence_score * 100) : undefined,
                       reasoning: message.reasoning,
                     }}
@@ -1004,7 +1085,7 @@ export default function ChatPage() {
                     isLatest={index === session.messages.length - 1}
                     showAvatar={true}
                     onMessageClick={() => {
-                      if (message.role === 'muse') {
+                      if (message.role === 'assistant') {
                         // Cycle through different panel states: none -> rating -> DAT -> none
                         if (!currentRatingMessage && !showDATMintingFor) {
                           setCurrentRatingMessage(message.id);
@@ -1027,7 +1108,7 @@ export default function ChatPage() {
                   />
                   
                   {/* Phase 2 Feature Panels */}
-                  {message.role === 'muse' && (
+                  {message.role === 'assistant' && (
                     <div className="ml-12 space-y-3">
                       
                       {/* ✅ NEW: DAT & Verification Status Bar */}
@@ -1037,20 +1118,66 @@ export default function ChatPage() {
                           {getDATStatusIcon(message)}
                         </div>
                         
-                        {/* Interactive action hints */}
-                        <div className="flex items-center space-x-3 text-gray-500">
-                          {message.role === 'muse' && !currentRatingMessage && !showDATMintingFor && (
-                            <span className="hover:text-gray-300 cursor-pointer" title="Click message to rate">
-                              💫 Click to rate
-                            </span>
+                        {/* Interactive action buttons */}
+                        <div className="flex items-center space-x-3">
+                          {/* Step indicators for user guidance */}
+                          {!ratedMessages.has(message.id) && currentRatingMessage !== message.id && showDATMintingFor !== message.id && (
+                            <span className="text-xs text-gray-500">Step 1: Rate → Step 2: Mint DAT</span>
+                          )}
+                          {currentRatingMessage === message.id && (
+                            <span className="text-xs text-blue-300 animate-pulse">Step 1: Complete Rating → Step 2: Click "Mint DAT"</span>
+                          )}
+                          {showDATMintingFor === message.id && (
+                            <span className="text-xs text-green-300 animate-pulse">Step 2: Click "Mint Interaction DAT" button below</span>
+                          )}
+                          {message.role === 'assistant' && (
+                            <div className="flex items-center space-x-2">
+                              {!ratedMessages.has(message.id) && currentRatingMessage !== message.id && showDATMintingFor !== message.id && (
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation(); // Prevent message click handler
+                                    setCurrentRatingMessage(message.id);
+                                  }}
+                                  className="text-xs px-3 py-1 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded-lg transition-colors"
+                                  title="Rate this response"
+                                >
+                                  💫 Rate Response
+                                </button>
+                              )}
+                            </div>
                           )}
                           {isEligibleForDAT(message) && currentRatingMessage === message.id && (
-                            <span className="hover:text-blue-300 cursor-pointer" title="Click again for DAT options">
-                              🏷️ Click again for DAT
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation(); // Prevent message click handler
+                                setCurrentRatingMessage(null);
+                                setShowDATMintingFor(message.id);
+                              }}
+                              className="text-xs px-3 py-1 bg-blue-500/30 hover:bg-blue-500/40 text-blue-200 rounded-lg transition-colors"
+                              title="Mint this interaction as a DAT certificate"
+                            >
+                              🏷️ Mint DAT
+                            </button>
+                          )}
+                          {isEligibleForDAT(message) && ratedMessages.has(message.id) && currentRatingMessage !== message.id && showDATMintingFor !== message.id && (
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation(); // Prevent message click handler
+                                setShowDATMintingFor(message.id);
+                              }}
+                              className="text-xs px-3 py-1 bg-green-500/30 hover:bg-green-500/40 text-green-200 rounded-lg transition-colors"
+                              title="Message already rated - mint DAT certificate"
+                            >
+                              🏷️ Mint DAT
+                            </button>
+                          )}
+                          {ratedMessages.has(message.id) && !mintedDATs.has(message.id) && showDATMintingFor !== message.id && (
+                            <span className="text-xs px-3 py-1 bg-yellow-500/20 text-yellow-400 rounded-lg" title="Response has been rated">
+                              ⭐ Rated
                             </span>
                           )}
                           {mintedDATs.has(message.id) && (
-                            <span className="text-green-400" title="DAT Certificate Available">
+                            <span className="text-xs px-3 py-1 bg-green-500/20 text-green-400 rounded-lg" title="DAT Certificate Available">
                               ✅ DAT Minted
                             </span>
                           )}
@@ -1145,7 +1272,9 @@ export default function ChatPage() {
                           responseId={message.id}
                           currentRating={ratedMessages.has(message.id) ? 85 : undefined}
                           isVisible={true}
-                          onToggle={() => setCurrentRatingMessage(null)}
+                          onToggle={() => {
+                            setCurrentRatingMessage(null);
+                          }}
                           onSubmitRating={async (rating, feedback, criteria) => {
                             try {
                               // Convert 0-100 scale to 1-10 scale for backend
@@ -1182,10 +1311,10 @@ export default function ChatPage() {
                               
                               console.log('Reward data for modal:', rewardData);
                               
-                              // Close rating panel after a delay to allow modal to show
+                              // Close rating panel after a brief delay to allow modal to show
                               setTimeout(() => {
                                 setCurrentRatingMessage(null);
-                              }, 6000); // Close after modal auto-hides (5s) + 1s buffer
+                              }, 2000); // Close after 2 seconds to show success
                               
                               return rewardData;
                             } catch (error) {
@@ -1237,7 +1366,9 @@ export default function ChatPage() {
                           teeAttestation={message.tee_attestation}
                           commitmentHash={message.commitment_hash}
                           isVisible={true}
-                          onToggle={() => toggleDATMinting(message.id)}
+                          onToggle={() => {
+                            setShowDATMintingFor(null);
+                          }}
                           onMintSuccess={(datId, ipfsHash) => handleDATMintSuccess(message.id, datId, ipfsHash)}
                         />
                       )}
@@ -1407,7 +1538,7 @@ export default function ChatPage() {
               type="text"
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+              onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
               placeholder="Type your message..."
               className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:border-purple-500"
               disabled={isSending}
@@ -1433,4 +1564,9 @@ export default function ChatPage() {
       </div>
     </div>
   );
+}
+
+// Main export component with client-side wrapper
+export default function ChatPage() {
+  return <DynamicClientOnlyChatPage />;
 }

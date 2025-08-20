@@ -701,18 +701,21 @@ impl IPFSChatHistoryManager {
     pub async fn store_training_data(&self, data: &[u8], data_hash: &str) -> Result<String> {
         println!("📁 Storing training data to IPFS - Hash: {}", data_hash);
         
-        // Create upload request with training data
-        let upload_request = alith::data::storage::UploadOptions::builder()
-            .name(format!("training_data_{}.json", data_hash))
-            .data(data.to_vec())
-            .token(self.app_config.ipfs_jwt_token.clone().unwrap_or_default())
-            .build();
-
-        // Upload to IPFS via PinataIPFS
-        match self.ipfs_storage.upload(upload_request).await {
-            Ok(file_meta) => {
-                println!("✅ Training data uploaded to IPFS: {}", file_meta.id);
-                Ok(file_meta.id)
+        // Convert data to string for direct upload
+        let content = String::from_utf8(data.to_vec())
+            .map_err(|e| anyhow::anyhow!("Invalid UTF-8 data: {}", e))?;
+        
+        let filename = format!("training_data_{}.json", data_hash);
+        
+        // Get token from config
+        let token = self.app_config.ipfs_jwt_token.clone()
+            .ok_or_else(|| anyhow::anyhow!("No IPFS JWT token configured"))?;
+        
+        // Use direct Pinata API upload (same as working implementations)
+        match self.upload_to_pinata_directly(&content, &filename, &token).await {
+            Ok(ipfs_hash) => {
+                println!("✅ Training data uploaded to IPFS: {}", ipfs_hash);
+                Ok(ipfs_hash)
             }
             Err(e) => {
                 println!("❌ Failed to upload training data to IPFS: {}", e);
