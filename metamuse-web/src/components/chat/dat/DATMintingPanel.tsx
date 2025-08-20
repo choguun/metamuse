@@ -5,6 +5,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAccount } from 'wagmi';
 import { PersonalityTraits } from '@/types';
 import api from '@/lib/api';
+import { TransactionStatus } from '@/components/ui/TransactionStatus';
+import { CONTRACTS } from '@/constants';
 
 interface DATMintingPanelProps {
   traits: PersonalityTraits;
@@ -17,7 +19,7 @@ interface DATMintingPanelProps {
   commitmentHash?: string;
   isVisible: boolean;
   onToggle: () => void;
-  onMintSuccess?: (datId: string, ipfsHash: string) => void;
+  onMintSuccess?: (datId: string, ipfsHash: string, transactionHash?: string, contractAddress?: string, tokenId?: string) => void;
 }
 
 interface MintingStep {
@@ -51,6 +53,10 @@ export function DATMintingPanel({
     tokenId?: string;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  
+  // Transaction state
+  const [transactionHash, setTransactionHash] = useState<`0x${string}` | null>(null);
+  const [transactionError, setTransactionError] = useState<Error | null>(null);
 
   const initializeMintingSteps = (): MintingStep[] => [
     {
@@ -138,6 +144,51 @@ export function DATMintingPanel({
     setMintingSteps(steps);
 
     try {
+      // Debug timestamp value with extensive logging
+      console.log('🚨 DAT Minting - Debug Info:');
+      console.log('  📋 Original timestamp:', timestamp);
+      console.log('  📋 Timestamp type:', typeof timestamp);
+      console.log('  📋 Is Date instance:', timestamp instanceof Date);
+      console.log('  📋 Timestamp value:', String(timestamp));
+      console.log('  📋 Timestamp toString:', timestamp?.toString?.());
+      
+      // Enhanced timestamp validation with multiple fallback strategies
+      let validTimestamp: Date;
+      let timestampSource = 'unknown';
+      
+      if (timestamp instanceof Date && !isNaN(timestamp.getTime())) {
+        // Valid Date object
+        validTimestamp = timestamp;
+        timestampSource = 'valid_date_object';
+      } else if (typeof timestamp === 'number') {
+        // Unix timestamp (seconds or milliseconds)
+        const timestampMs = timestamp > 10000000000 ? timestamp : timestamp * 1000;
+        validTimestamp = new Date(timestampMs);
+        timestampSource = `unix_timestamp_${timestamp > 10000000000 ? 'ms' : 's'}`;
+      } else if (typeof timestamp === 'string') {
+        // ISO string or other string format
+        const parsedTimestamp = new Date(timestamp);
+        if (!isNaN(parsedTimestamp.getTime())) {
+          validTimestamp = parsedTimestamp;
+          timestampSource = 'string_parsed';
+        } else {
+          throw new Error(`Invalid timestamp string: ${timestamp}`);
+        }
+      } else {
+        throw new Error(`Unsupported timestamp type: ${typeof timestamp}, value: ${String(timestamp)}`);
+      }
+      
+      // Final validation of the resulting Date
+      if (!validTimestamp || isNaN(validTimestamp.getTime())) {
+        console.error('❌ All timestamp parsing attempts failed, using current time as last resort');
+        validTimestamp = new Date();
+        timestampSource = 'current_time_fallback';
+      }
+      
+      console.log(`✅ DAT Minting - Timestamp processed successfully:`);
+      console.log(`  📅 Final timestamp: ${validTimestamp.toISOString()}`);
+      console.log(`  🔧 Source method: ${timestampSource}`);
+
       // Execute visual steps for user feedback
       for (const step of steps) {
         await executeStep(step);
@@ -148,7 +199,7 @@ export function DATMintingPanel({
         sessionId,
         userMessage: userMessage.substring(0, 100) + '...',
         aiResponse: aiResponse.substring(0, 100) + '...',
-        timestamp: timestamp.toISOString(),
+        timestamp: validTimestamp.toISOString(),
         teeAttestation,
         commitmentHash,
         userAddress: address,
@@ -160,19 +211,20 @@ export function DATMintingPanel({
       console.log('🚨 API DAT mint function:', typeof api.dat.mint);
       
       // Call backend DAT minting API using the typed API client
+      console.log('🚨 Making DAT minting API call...');
       const result = await api.dat.mint({
         interaction_data: {
           message_id: messageId,
           session_id: sessionId,
           user_message: userMessage,
           ai_response: aiResponse,
-          timestamp: Math.floor(timestamp.getTime() / 1000),
+          timestamp: Math.floor(validTimestamp.getTime() / 1000),
           user_address: address,
         },
         tee_proof: teeAttestation ? {
           attestation_hex: teeAttestation,
           enclave_id: 'mrenc_a7b3c4d5',
-          timestamp: Math.floor(timestamp.getTime() / 1000),
+          timestamp: Math.floor(validTimestamp.getTime() / 1000),
           nonce: `nonce_${messageId}`,
         } : undefined,
         verification_proof: commitmentHash ? {
@@ -181,20 +233,52 @@ export function DATMintingPanel({
           block_number: Math.floor(Date.now() / 1000),
         } : undefined,
       });
-      console.log('✅ DAT minted successfully:', result);
+      console.log('✅ DAT minted successfully - Raw API response:', result);
+      console.log('📋 Response type:', typeof result);
+      console.log('📋 Response keys:', Object.keys(result));
+      console.log('📋 Response structure:', JSON.stringify(result, null, 2));
 
+      // Handle transaction hash if available
+      if (result.transaction_hash) {
+        setTransactionHash(result.transaction_hash as `0x${string}`);
+      }
+
+      // Map backend response fields to frontend expected fields
       const datInfo = {
-        id: result.dat_id,
-        ipfsHash: result.ipfs_hash,
-        contractAddress: result.contract_address,
-        tokenId: result.token_id,
+        id: result.dat_token_id?.toString() || 'N/A',
+        ipfsHash: result.ipfs_metadata_hash || 'N/A',
+        contractAddress: result.contract_address || CONTRACTS.InteractionDAT,
+        tokenId: result.dat_token_id?.toString() || undefined,
       };
+      
+      console.log('📄 DAT Result Fields (Backend Response):', {
+        dat_token_id: result.dat_token_id,
+        ipfs_metadata_hash: result.ipfs_metadata_hash,
+        transaction_hash: result.transaction_hash,
+        success: result.success,
+        error: result.error
+      });
+      
+      console.log('📄 DAT Result Fields (Mapped for Frontend):', {
+        id: datInfo.id,
+        ipfsHash: datInfo.ipfsHash,
+        contractAddress: datInfo.contractAddress,
+        tokenId: datInfo.tokenId,
+        transactionHash: result.transaction_hash
+      });
 
       setMintedDAT(datInfo);
       
-      // Notify parent component
+      // Notify parent component with all transaction details
       if (onMintSuccess) {
-        onMintSuccess(datInfo.id, datInfo.ipfsHash);
+        console.log('🚨 Calling onMintSuccess with:', {
+          datId: datInfo.id,
+          ipfsHash: datInfo.ipfsHash,
+          transactionHash: transactionHash || undefined,
+          contractAddress: datInfo.contractAddress,
+          tokenId: datInfo.tokenId
+        });
+        onMintSuccess(datInfo.id, datInfo.ipfsHash, transactionHash || undefined, datInfo.contractAddress, datInfo.tokenId);
       }
 
     } catch (error) {
@@ -205,6 +289,7 @@ export function DATMintingPanel({
       console.error('🚨 Full error object:', error);
       
       setError(error instanceof Error ? error.message : 'DAT minting failed');
+      setTransactionError(error as Error);
       
       // Mark current step as error
       setMintingSteps(prev => 
@@ -271,10 +356,10 @@ export function DATMintingPanel({
                 </div>
                 <div>
                   <h3 className="text-lg font-semibold text-white">
-                    Mint Verified Interaction DAT
+                    {mintedDAT ? "✅ DAT Minted Successfully!" : "Mint Verified Interaction DAT"}
                   </h3>
                   <p className="text-sm text-gray-400">
-                    Create a verifiable certificate of this AI interaction
+                    {mintedDAT ? "Your verifiable interaction certificate is ready" : "Create a verifiable certificate of this AI interaction"}
                   </p>
                 </div>
               </div>
@@ -296,7 +381,25 @@ export function DATMintingPanel({
                 </div>
                 <div>
                   <span className="text-gray-400">Timestamp:</span>
-                  <p className="text-white">{timestamp.toLocaleString()}</p>
+                  <p className="text-white">
+                    {(() => {
+                      try {
+                        if (timestamp instanceof Date && !isNaN(timestamp.getTime())) {
+                          return timestamp.toLocaleString();
+                        } else if (typeof timestamp === 'number') {
+                          const timestampMs = timestamp > 10000000000 ? timestamp : timestamp * 1000;
+                          return new Date(timestampMs).toLocaleString();
+                        } else if (typeof timestamp === 'string') {
+                          return new Date(timestamp).toLocaleString();
+                        } else {
+                          return new Date().toLocaleString();
+                        }
+                      } catch (error) {
+                        console.warn('Failed to format timestamp for display:', error);
+                        return new Date().toLocaleString();
+                      }
+                    })()}
+                  </p>
                 </div>
                 <div>
                   <span className="text-gray-400">TEE Verified:</span>
@@ -342,6 +445,17 @@ export function DATMintingPanel({
                 <p className="text-red-200 text-sm mt-1">{error}</p>
               </motion.div>
             )}
+
+            {/* Transaction Status - Always show when transaction hash exists */}
+            <TransactionStatus
+              hash={transactionHash || undefined}
+              isLoading={isMinting && !transactionHash} 
+              isSuccess={!!mintedDAT && !!transactionHash}
+              error={transactionError}
+              title="DAT Minting Transaction"
+              description={mintedDAT ? "✅ Your verifiable interaction certificate has been created!" : "Minting your verifiable interaction certificate"}
+              className="mb-4"
+            />
 
             {/* Success Display */}
             {mintedDAT && (
@@ -504,9 +618,13 @@ export function DATMintingPanel({
               
               <button
                 onClick={onToggle}
-                className="px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition-colors"
+                className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
+                  mintedDAT 
+                    ? 'bg-green-600 hover:bg-green-700 text-white shadow-lg' 
+                    : 'bg-gray-700 hover:bg-gray-600 text-white'
+                }`}
               >
-                {mintedDAT ? 'Close' : 'Cancel'}
+                {mintedDAT ? '✅ Close Panel' : 'Cancel'}
               </button>
             </div>
           </div>

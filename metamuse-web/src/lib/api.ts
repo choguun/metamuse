@@ -521,13 +521,12 @@ export const api = {
       };
     }) =>
       apiClient.post<{
-        dat_id: string;
-        ipfs_hash: string;
-        contract_address: string;
-        token_id?: string;
-        transaction_hash?: string;
         success: boolean;
-        error_message?: string;
+        dat_token_id?: number;
+        ipfs_metadata_hash?: string;
+        transaction_hash?: string;
+        error?: string;
+        contract_address?: string;
       }>('/api/v1/dat/mint', data),
 
     // Get DATs owned by a user

@@ -6,7 +6,7 @@ import { TrainingDataContribution } from '@/components/training/TrainingDataCont
 
 export default function TrainingDataContributePage() {
   const router = useRouter();
-  const [selectedMuseId, setSelectedMuseId] = useState('1');
+  const [selectedMuseId, setSelectedMuseId] = useState('');
 
   return (
     <div className="min-h-screen bg-gray-950 py-8">
@@ -51,15 +51,14 @@ export default function TrainingDataContributePage() {
           <h2 className="text-lg font-semibold text-white mb-4">Select Muse for Training Data</h2>
           <div className="flex items-center space-x-4">
             <label className="text-gray-400">Muse ID:</label>
-            <select
+            <input
+              type="number"
+              min="1"
               value={selectedMuseId}
               onChange={(e) => setSelectedMuseId(e.target.value)}
+              placeholder="Enter muse ID"
               className="bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white focus:border-purple-500 focus:outline-none"
-            >
-              <option value="1">Muse #1 (Test)</option>
-              <option value="2">Muse #2 (Demo)</option>
-              <option value="3">Muse #3 (Example)</option>
-            </select>
+            />
             <span className="text-sm text-gray-500">
               Choose which muse's interactions you want to improve
             </span>
@@ -67,20 +66,30 @@ export default function TrainingDataContributePage() {
         </div>
 
         {/* Training Data Contribution Component */}
-        <TrainingDataContribution
-          museId={selectedMuseId}
-          originalMessage="This is a sample AI response that could be improved. It's factually correct but could be more engaging and personality-driven."
-          improvedMessage="Here's my improved version with better personality, more engaging tone, and enhanced creativity while maintaining accuracy."
-          onSuccess={(contributionId, rewardAmount) => {
-            // Navigate to marketplace stats or show success message
-            setTimeout(() => {
+        {selectedMuseId && (
+          <TrainingDataContribution
+            museId={selectedMuseId}
+            onSuccess={(contributionId, rewardAmount) => {
+              // Navigate to marketplace stats or show success message
+              setTimeout(() => {
+                router.push('/training');
+              }, 3000);
+            }}
+            onClose={() => {
               router.push('/training');
-            }, 3000);
-          }}
-          onClose={() => {
-            router.push('/training');
-          }}
-        />
+            }}
+          />
+        )}
+        
+        {!selectedMuseId && (
+          <div className="text-center py-12 bg-gray-900 rounded-xl border border-gray-700">
+            <div className="text-4xl mb-4">🏭</div>
+            <h3 className="text-xl font-semibold text-white mb-2">Select a Muse to Start Contributing</h3>
+            <p className="text-gray-400">
+              Enter the ID of the muse you want to improve above to begin contributing training data.
+            </p>
+          </div>
+        )}
 
       </div>
     </div>

@@ -209,81 +209,8 @@ export default function Explore() {
     return dominant;
   };
 
-  const generateMockMuses = (): MuseData[] => {
-    // Generate some mock data for demonstration
-    const mockMuses: MuseData[] = [
-      {
-        token_id: '1',
-        creativity: 85,
-        wisdom: 60,
-        humor: 75,
-        empathy: 45,
-        dna_hash: '0x123...',
-        birth_block: 12345,
-        total_interactions: 142,
-        owner: '0xabc...',
-      },
-      {
-        token_id: '2',
-        creativity: 30,
-        wisdom: 95,
-        humor: 40,
-        empathy: 80,
-        dna_hash: '0x456...',
-        birth_block: 12350,
-        total_interactions: 89,
-        owner: '0xdef...',
-      },
-      {
-        token_id: '3',
-        creativity: 70,
-        wisdom: 55,
-        humor: 90,
-        empathy: 65,
-        dna_hash: '0x789...',
-        birth_block: 12360,
-        total_interactions: 203,
-        owner: '0xghi...',
-      },
-      {
-        token_id: '4',
-        creativity: 45,
-        wisdom: 70,
-        humor: 35,
-        empathy: 95,
-        dna_hash: '0xabc...',
-        birth_block: 12365,
-        total_interactions: 67,
-        owner: '0xjkl...',
-      },
-      {
-        token_id: '5',
-        creativity: 90,
-        wisdom: 40,
-        humor: 80,
-        empathy: 55,
-        dna_hash: '0xdef...',
-        birth_block: 12370,
-        total_interactions: 156,
-        owner: '0xmno...',
-      },
-      {
-        token_id: '6',
-        creativity: 55,
-        wisdom: 85,
-        humor: 60,
-        empathy: 75,
-        dna_hash: '0xghi...',
-        birth_block: 12375,
-        total_interactions: 94,
-        owner: '0xpqr...',
-      },
-    ];
-    return mockMuses;
-  };
 
-  // Use mock data if API fails
-  const displayMuses = muses.length > 0 ? muses : generateMockMuses();
+  const displayMuses = muses;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900/20 to-blue-900/20 py-12">
@@ -360,8 +287,20 @@ export default function Explore() {
           </div>
         ) : error ? (
           <div className="text-center py-20">
-            <div className="text-amber-400 mb-4">⚠️ {error}</div>
-            <p className="text-gray-400 mb-6">Showing sample muses for demonstration</p>
+            <div className="text-red-400 mb-4">❌ {error}</div>
+            <p className="text-gray-400 mb-6">Unable to load muses. Please check your connection.</p>
+          </div>
+        ) : muses.length === 0 ? (
+          <div className="text-center py-20">
+            <div className="text-4xl mb-4">🌟</div>
+            <h3 className="text-xl font-semibold text-white mb-2">No Muses Found</h3>
+            <p className="text-gray-400 mb-6">Be the first to create a muse for the community to discover!</p>
+            <Link
+              href="/create"
+              className="inline-block bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-all duration-200"
+            >
+              Create Your First Muse
+            </Link>
           </div>
         ) : null}
 

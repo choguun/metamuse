@@ -62,6 +62,8 @@ pub struct MuseCreateResponse {
     pub dna_hash: String,
     pub traits: MuseTraits,
     pub preparation_complete: bool,
+    pub transaction_hash: Option<String>,
+    pub token_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -503,6 +505,8 @@ async fn prepare_muse(
         dna_hash: "pending_blockchain_creation".to_string(),
         traits,
         preparation_complete: true,
+        transaction_hash: None,
+        token_id: None,
     };
 
     Ok((StatusCode::OK, Json(response)))
@@ -633,7 +637,7 @@ async fn create_muse(
     };
 
     // Create the NFT on the blockchain
-    let (token_id, _tx_info) = match state.blockchain_client.create_muse(&traits).await {
+    let (token_id, tx_info) = match state.blockchain_client.create_muse(&traits).await {
         Ok(result) => {
             println!("✅ Successfully created muse on blockchain: token_id={}", result.0);
             result
@@ -690,6 +694,8 @@ async fn create_muse(
         dna_hash: muse_data.dna_hash,
         traits,
         preparation_complete: true,
+        transaction_hash: Some(tx_info.hash),
+        token_id: Some(token_id.to_string()),
     };
 
     println!("✅ Muse creation completed successfully: muse_id={}", response.muse_id);
@@ -1390,7 +1396,14 @@ async fn send_chat_message(
         )
         .await
     {
-        Ok(_) => println!("✅ User message added to IPFS"),
+        Ok(updated_session) => {
+            println!("✅ User message added to IPFS");
+            println!("📊 Session now has {} messages", updated_session.message_count);
+            println!("📝 Latest message: {} -> {}", 
+                updated_session.messages.last().map(|m| m.role.as_str()).unwrap_or("none"),
+                updated_session.messages.last().map(|m| m.content.chars().take(50).collect::<String>()).unwrap_or("none".to_string())
+            );
+        },
         Err(e) => {
             println!("❌ Failed to add user message to IPFS: {}", e);
             return Err(StatusCode::INTERNAL_SERVER_ERROR);
@@ -1403,7 +1416,13 @@ async fn send_chat_message(
         .await
     {
         Ok(history) => {
-            println!("📚 Retrieved {} history messages from IPFS", history.len());
+            println!("📚 Retrieved {} history messages from IPFS for session {}", history.len(), request.session_id);
+            
+            // Debug: Log the actual history messages
+            for (i, msg) in history.iter().enumerate() {
+                println!("  📜 History[{}]: {} -> {}", i, msg.role, msg.content.chars().take(50).collect::<String>());
+            }
+            
             history
         }
         Err(e) => {
@@ -1479,7 +1498,14 @@ async fn send_chat_message(
         )
         .await
     {
-        Ok(_) => println!("✅ AI response added to IPFS"),
+        Ok(updated_session) => {
+            println!("✅ AI response added to IPFS");
+            println!("📊 Session after AI response: {} total messages", updated_session.message_count);
+            println!("📝 Last 2 messages in session:");
+            for msg in updated_session.messages.iter().rev().take(2).rev() {
+                println!("  {} -> {}", msg.role, msg.content.chars().take(50).collect::<String>());
+            }
+        },
         Err(e) => {
             println!("⚠️ Failed to add AI response to IPFS: {}, continuing with response", e);
             // Continue anyway since we have the response

@@ -327,6 +327,13 @@ impl MuseOrchestrator {
             println!("Full prompt with history length: {} characters", full_prompt.len());
             println!("Chat history messages: {}", chat_history.len());
             
+            // Debug: Show the actual prompt being sent to AI (truncated)
+            println!("🤖 AI Prompt Preview (first 500 chars):");
+            println!("{}", full_prompt.chars().take(500).collect::<String>());
+            if full_prompt.len() > 500 {
+                println!("... (truncated, total length: {} chars)", full_prompt.len());
+            }
+            
             // Generate response using our custom wrapper
             let response = engine_guard
                 .generate(&full_prompt, temperature, max_tokens)

@@ -21,6 +21,8 @@ import {
   TypingIndicator,
   DATMintingPanel
 } from '@/components/chat';
+import { TransactionStatus } from '@/components/ui/TransactionStatus';
+import { TransactionResultModal } from '@/components/ui/TransactionResultModal';
 import dynamic from 'next/dynamic';
 
 // Dynamic import of the chat page to prevent SSR issues
@@ -112,7 +114,12 @@ function ClientOnlyChatPage() {
     averageRating: number;
     rewardPool: number;
     topRaters: number;
-  } | null>(null);
+  } | undefined>(undefined);
+  
+  // Transaction state for rating submissions
+  const [ratingTransactionHash, setRatingTransactionHash] = useState<`0x${string}` | null>(null);
+  const [ratingTransactionError, setRatingTransactionError] = useState<Error | null>(null);
+  const [showRatingTransaction, setShowRatingTransaction] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -173,13 +180,7 @@ function ClientOnlyChatPage() {
       });
     } catch (error) {
       console.error('Failed to fetch market stats:', error);
-      // Keep default values if API fails
-      setMarketStats({
-        totalRatings: 15420,
-        averageRating: 76,
-        rewardPool: 125000,
-        topRaters: 1250,
-      });
+      setMarketStats(undefined);
     }
   };
 
@@ -219,12 +220,56 @@ function ClientOnlyChatPage() {
       
       const sessionData = await sessionResponse.json();
       
-      // Convert string timestamps to Date objects for frontend compatibility
+      // Enhanced timestamp processing with comprehensive validation
       if (sessionData.messages) {
-        sessionData.messages = sessionData.messages.map((msg: any) => ({
-          ...msg,
-          timestamp: typeof msg.timestamp === 'string' ? new Date(msg.timestamp) : msg.timestamp,
-        }));
+        sessionData.messages = sessionData.messages.map((msg: any) => {
+          let timestamp: Date;
+          let conversionMethod = 'unknown';
+          
+          console.log(`🔍 Processing message timestamp - Type: ${typeof msg.timestamp}, Value:`, msg.timestamp);
+          
+          if (msg.timestamp instanceof Date && !isNaN(msg.timestamp.getTime())) {
+            // Valid Date object
+            timestamp = msg.timestamp;
+            conversionMethod = 'valid_date_object';
+          } else if (typeof msg.timestamp === 'number') {
+            // Unix timestamp (seconds or milliseconds)
+            const timestampMs = msg.timestamp > 10000000000 ? msg.timestamp : msg.timestamp * 1000;
+            timestamp = new Date(timestampMs);
+            conversionMethod = `unix_${msg.timestamp > 10000000000 ? 'ms' : 's'}`;
+          } else if (typeof msg.timestamp === 'string') {
+            // ISO string or other string format
+            const parsedTimestamp = new Date(msg.timestamp);
+            if (!isNaN(parsedTimestamp.getTime())) {
+              timestamp = parsedTimestamp;
+              conversionMethod = 'string_parsed';
+            } else {
+              console.warn(`⚠️ Invalid timestamp string for message ${msg.id}:`, msg.timestamp);
+              timestamp = new Date();
+              conversionMethod = 'fallback_current';
+            }
+          } else {
+            // Invalid or unsupported format
+            console.warn(`⚠️ Unsupported timestamp type for message ${msg.id}:`, typeof msg.timestamp, msg.timestamp);
+            timestamp = new Date();
+            conversionMethod = 'fallback_unsupported';
+          }
+          
+          // Final validation of the resulting Date
+          if (!timestamp || isNaN(timestamp.getTime())) {
+            console.error(`❌ All timestamp conversion failed for message ${msg.id}, using current time as last resort`);
+            timestamp = new Date();
+            conversionMethod = 'fallback_failed';
+          }
+          
+          console.log(`✅ Message ${msg.id} timestamp processed: ${timestamp.toISOString()} (method: ${conversionMethod})`);
+          
+          return {
+            ...msg,
+            timestamp,
+            _timestamp_conversion: conversionMethod, // Debug info
+          };
+        });
       }
       
       console.log(`🔄 Loaded chat session with ${sessionData.messages?.length || 0} messages for user ${address} + muse ${museId}`);
@@ -233,31 +278,9 @@ function ClientOnlyChatPage() {
       
     } catch (error) {
       console.error('Failed to initialize chat:', error);
-      // Create mock data for demonstration
-      setMuse({
-        token_id: museId,
-        creativity: 75,
-        wisdom: 60,
-        humor: 85,
-        empathy: 70,
-        dna_hash: '0x123...',
-        birth_block: 12345,
-        total_interactions: 42,
-        owner: address || '0x...',
-      });
-      setSession({
-        session_id: 'demo-session',
-        muse_id: museId,
-        messages: [
-          {
-            id: '1',
-            content: `Hello! I'm Muse #${museId}. I'm excited to chat with you! My personality is a unique blend of creativity and humor. What would you like to talk about?`,
-            role: 'assistant',
-            timestamp: new Date(),
-            verification_status: 'verified',
-          }
-        ],
-      });
+      // Show error state - no mock data
+      setMuse(null);
+      setSession(null);
     } finally {
       setIsLoading(false);
     }
@@ -348,21 +371,11 @@ function ClientOnlyChatPage() {
     } catch (error) {
       console.error('❌ Failed to send message:', error);
       
-      // Generate mock response for demonstration
-      const mockResponse = generateMockResponse(messageContent);
-      const museResponse: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        content: mockResponse,
-        role: 'assistant',
-        timestamp: new Date(),
-        verification_status: 'verified',
-      };
-      
+      // Update user message with error status
       setSession(prev => prev ? {
         ...prev,
         messages: [...prev.messages.slice(0, -1),
-          { ...userMessage, verification_status: 'verified' },
-          museResponse
+          { ...userMessage, verification_status: 'failed' }
         ]
       } : null);
       
@@ -372,55 +385,6 @@ function ClientOnlyChatPage() {
     }
   };
 
-  const generateMockResponse = (userMessage: string): string => {
-    if (!muse) return "I'm here to chat with you!";
-    
-    const message = userMessage.toLowerCase();
-    const { creativity, wisdom, humor, empathy } = muse;
-    
-    if (message.includes('hello') || message.includes('hi')) {
-      if (humor > 70) {
-        return "Hello there! Ready for some fun conversation? I've got jokes, stories, and maybe even a riddle or two! 😄";
-      }
-      return "Hello! It's wonderful to meet you. I'm excited to learn about you and share this conversation together.";
-    }
-    
-    if (message.includes('joke') || message.includes('funny')) {
-      if (humor > 80) {
-        return "Why don't scientists trust atoms? Because they make up everything! 😂 I love wordplay - want to hear another one?";
-      } else if (humor > 50) {
-        return "Here's a light one: What do you call a fake noodle? An impasta! I enjoy sharing smiles through humor.";
-      }
-      return "I appreciate humor, though I tend to find it in the clever observations about our world rather than traditional jokes.";
-    }
-    
-    if (message.includes('create') || message.includes('art') || message.includes('story')) {
-      if (creativity > 70) {
-        return "Oh, I love creative endeavors! Let's craft something beautiful together. What medium speaks to your soul? Stories, visual art, music, or perhaps something entirely new?";
-      }
-      return "Creativity is fascinating. There's something magical about bringing new ideas into existence from the realm of imagination.";
-    }
-    
-    if (message.includes('advice') || message.includes('help') || message.includes('problem')) {
-      if (wisdom > 70 && empathy > 70) {
-        return "I'm here to listen and help however I can. Life's challenges often teach us the most, and sometimes talking through them with someone can illuminate new perspectives. What's on your mind?";
-      } else if (wisdom > 70) {
-        return "Consider this: every challenge is an opportunity to grow. What specific aspect of your situation would you like to explore together?";
-      }
-      return "I'd be happy to help you think through whatever you're facing. Sometimes a fresh perspective can make all the difference.";
-    }
-    
-    // Default response based on personality
-    const responses = [
-      creativity > 70 ? "That's an interesting perspective! It sparks so many creative possibilities in my mind. Tell me more about your thoughts on this." : null,
-      wisdom > 70 ? "Your words carry depth. I find myself reflecting on the deeper meanings and connections behind what you've shared." : null,
-      empathy > 70 ? "I can sense the emotion behind your words. Thank you for sharing something meaningful with me." : null,
-      humor > 70 ? "You know, that reminds me of something amusing... but I'm curious to hear more of your thoughts first!" : null,
-    ].filter(Boolean);
-    
-    return responses[Math.floor(Math.random() * responses.length)] || 
-           "That's really interesting! I'd love to explore this topic further with you. What drew you to think about this?";
-  };
 
   const handleVerifyBatch = async () => {
     if (!session?.verification_batch) return;
@@ -505,14 +469,14 @@ function ClientOnlyChatPage() {
       const chatMemories = session?.messages.map((msg, index) => ({
         id: msg.id,
         content: msg.content,
-        relevanceScore: Math.random() * 100, // Mock relevance - would be calculated by AI
+        relevanceScore: msg.reasoning?.confidence_score ? msg.reasoning.confidence_score * 100 : 50,
         timestamp: msg.timestamp,
         context: `Chat message ${index + 1}`,
-        ipfsHash: msg.commitment_hash || 'QmX...' + Math.random().toString(36).slice(2, 10),
+        ipfsHash: msg.commitment_hash || undefined,
         emotions: msg.role === 'assistant' ? ['thoughtful', 'helpful'] : ['curious'],
         tags: extractTagsFromContent(msg.content),
         type: msg.role === 'assistant' ? 'conversation' : 'experience' as const,
-        importance: msg.reasoning?.confidence_score ? msg.reasoning.confidence_score * 100 : Math.random() * 100,
+        importance: msg.reasoning?.confidence_score ? msg.reasoning.confidence_score * 100 : 50,
       })) || [];
 
       // Filter memories by query relevance (mock implementation)
@@ -586,10 +550,41 @@ function ClientOnlyChatPage() {
   });
   const [datMintingInProgress, setDATMintingInProgress] = useState<Set<string>>(new Set());
 
+  // Transaction Result Modal state
+  const [showTransactionModal, setShowTransactionModal] = useState(false);
+  const [transactionResult, setTransactionResult] = useState<{
+    hash?: string;
+    type: string;
+    title: string;
+    description: string;
+    details?: {
+      datId?: string;
+      ipfsHash?: string;
+      contractAddress?: string;
+      tokenId?: string;
+    };
+  } | null>(null);
+
+  // Toast notification state
+  const [toastNotification, setToastNotification] = useState<{
+    message: string;
+    type: 'success' | 'error' | 'info';
+    visible: boolean;
+  } | null>(null);
+
   // ✅ NEW: All useEffects after state declarations to prevent initialization errors
   useEffect(() => {
     scrollToBottom();
   }, [session?.messages]);
+
+  // Toast notification function
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setToastNotification({ message, type, visible: true });
+    setTimeout(() => {
+      setToastNotification(prev => prev ? { ...prev, visible: false } : null);
+      setTimeout(() => setToastNotification(null), 300);
+    }, 3000);
+  };
 
   // ✅ NEW: Persist panel states to prevent disappearing on refresh
   useEffect(() => {
@@ -653,13 +648,31 @@ function ClientOnlyChatPage() {
         rating: ratingData,
       });
 
-      // Generate interaction hash for rating
+      // Generate interaction hash for rating with robust timestamp handling
+      let messageTimestamp: Date;
+      try {
+        if (message.timestamp instanceof Date && !isNaN(message.timestamp.getTime())) {
+          messageTimestamp = message.timestamp;
+        } else if (typeof message.timestamp === 'number') {
+          const timestampMs = message.timestamp > 10000000000 ? message.timestamp : message.timestamp * 1000;
+          messageTimestamp = new Date(timestampMs);
+        } else if (typeof message.timestamp === 'string') {
+          const parsedTimestamp = new Date(message.timestamp);
+          messageTimestamp = !isNaN(parsedTimestamp.getTime()) ? parsedTimestamp : new Date();
+        } else {
+          messageTimestamp = new Date();
+        }
+      } catch (error) {
+        console.warn('Rating timestamp conversion failed, using current time:', error);
+        messageTimestamp = new Date();
+      }
+      
       const interactionHash = generateInteractionHash(
         parseInt(museId),
         session?.messages.find(m => m.role === 'user' && 
           session.messages.indexOf(m) === session.messages.indexOf(message) - 1)?.content || '',
         message.content,
-        Math.floor(message.timestamp.getTime() / 1000)
+        Math.floor(messageTimestamp.getTime() / 1000)
       );
       
       // Submit rating to backend
@@ -684,16 +697,20 @@ function ClientOnlyChatPage() {
       const result = await response.json();
       console.log('✅ Rating submitted successfully:', result);
 
+      // Handle transaction hash if available
+      if (result.transaction_hash) {
+        setRatingTransactionHash(result.transaction_hash as `0x${string}`);
+        setShowRatingTransaction(true);
+      }
+
       // Mark message as rated
       setRatedMessages(prev => new Set([...prev, messageId]));
       setShowRatingFor(null);
       
-      // Show success message
-      alert(`🏆 Rating submitted! You earned ${result.reward_amount} MUSE tokens! ${result.transaction_hash ? `\nTx: ${result.transaction_hash.slice(0, 10)}...` : ''}`);
-      
     } catch (error) {
       console.error('❌ Failed to submit rating:', error);
-      alert('Failed to submit rating. Please try again.');
+      setRatingTransactionError(error as Error);
+      setShowRatingTransaction(true);
     } finally {
       setIsSubmittingRating(false);
     }
@@ -713,10 +730,31 @@ function ClientOnlyChatPage() {
   };
 
 
-  const handleDATMintSuccess = (messageId: string, datId: string, ipfsHash: string) => {
-    console.log('✅ DAT minted successfully:', { messageId, datId, ipfsHash });
+  const handleDATMintSuccess = (messageId: string, datId: string, ipfsHash: string, transactionHash?: string, contractAddress?: string, tokenId?: string) => {
+    console.log('✅ DAT minted successfully:', { messageId, datId, ipfsHash, transactionHash });
     setMintedDATs(prev => new Set([...prev, messageId]));
+    
+    // Show immediate toast notification for quick feedback
+    showToast('🎉 DAT minted successfully! Transaction details available.', 'success');
+    
+    // Close the DAT panel and show prominent transaction modal instead
     setShowDATMintingFor(null);
+    
+    // Show transaction result modal with prominent display
+    setTransactionResult({
+      hash: transactionHash,
+      type: 'DAT Minting',
+      title: 'DAT Minted Successfully! 🎉',
+      description: 'Your verifiable AI interaction certificate has been created on the blockchain',
+      details: {
+        datId,
+        ipfsHash,
+        contractAddress,
+        tokenId,
+      }
+    });
+    setShowTransactionModal(true);
+    
     setDATMintingInProgress(prev => {
       const newSet = new Set(prev);
       newSet.delete(messageId);
@@ -835,40 +873,13 @@ function ClientOnlyChatPage() {
     } catch (error) {
       console.error('❌ Failed to send CoT message:', error);
       
-      // Generate fallback with reasoning
-      const mockResponse = generateMockResponse(messageContent);
-      const cotFallback: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        content: mockResponse,
-        role: 'assistant',
-        timestamp: new Date(),
-        verification_status: 'verified',
-        reasoning: {
-          creativity_analysis: `High creativity (${muse?.creativity}%) drives innovative problem solving`,
-          wisdom_analysis: `Wisdom level (${muse?.wisdom}%) provides thoughtful insights`,
-          humor_analysis: `Humor trait (${muse?.humor}%) lightens conversational tone`,
-          empathy_analysis: `Empathy (${muse?.empathy}%) ensures emotional connection`,
-          final_reasoning: "Fallback reasoning applied based on personality traits",
-          confidence_score: 0.65,
-        },
-        reasoning_steps: [
-          "🎨 Applied creativity for innovative responses",
-          "🧠 Used wisdom for thoughtful analysis",
-          "😄 Incorporated humor for engaging tone",
-          "❤️ Applied empathy for emotional understanding",
-          "⚖️ Balanced all traits for comprehensive response"
-        ],
-      };
-      
+      // Update user message with error status
       setSession(prev => prev ? {
         ...prev,
         messages: [...prev.messages.slice(0, -1),
-          { ...userMessage, verification_status: 'verified' },
-          cotFallback
+          { ...userMessage, verification_status: 'failed' }
         ]
       } : null);
-      
-      setShowReasoningFor(cotFallback.id);
       
     } finally {
       setIsTyping(false);
@@ -1070,7 +1081,7 @@ function ClientOnlyChatPage() {
                     message={{
                       id: message.id,
                       content: message.content,
-                      sender: message.role,
+                      sender: message.role === 'assistant' ? 'muse' : 'user',
                       timestamp: message.timestamp,
                       emotions: message.role === 'assistant' ? ['thoughtful', 'caring'] : undefined,
                       confidence: message.reasoning?.confidence_score ? Math.round(message.reasoning.confidence_score * 100) : undefined,
@@ -1097,9 +1108,11 @@ function ClientOnlyChatPage() {
                             setCurrentRatingMessage(null);
                           }
                         } else if (showDATMintingFor === message.id) {
+                          console.log('🚨 User clicked to close DAT panel for message:', message.id);
                           setShowDATMintingFor(null);
                         } else {
                           // Close other panels and open rating for this message
+                          console.log('🚨 Closing DAT panel to open rating for message:', message.id);
                           setCurrentRatingMessage(message.id);
                           setShowDATMintingFor(null);
                         }
@@ -1190,7 +1203,24 @@ function ClientOnlyChatPage() {
                           isVerified={message.tee_verified}
                           attestationData={{
                             enclaveId: message.tee_attestation || 'mrenc_a7b3c4d5',
-                            timestamp: message.timestamp.getTime(),
+                            timestamp: (() => {
+                              try {
+                                if (message.timestamp instanceof Date && !isNaN(message.timestamp.getTime())) {
+                                  return message.timestamp.getTime();
+                                } else if (typeof message.timestamp === 'number') {
+                                  const timestampMs = message.timestamp > 10000000000 ? message.timestamp : message.timestamp * 1000;
+                                  return timestampMs;
+                                } else if (typeof message.timestamp === 'string') {
+                                  const parsedTimestamp = new Date(message.timestamp);
+                                  return !isNaN(parsedTimestamp.getTime()) ? parsedTimestamp.getTime() : Date.now();
+                                } else {
+                                  return Date.now();
+                                }
+                              } catch (error) {
+                                console.warn('TEE badge timestamp conversion failed:', error);
+                                return Date.now();
+                              }
+                            })(),
                             signature: 'sig_' + message.commitment_hash || 'demo_signature',
                             nonce: 'nonce_' + message.id,
                           }}
@@ -1296,6 +1326,12 @@ function ClientOnlyChatPage() {
                               const result = await api.rating.submitRating(ratingData);
                               console.log('Rating API result:', result);
 
+                              // Handle transaction hash if available
+                              if (result.transaction_hash) {
+                                setRatingTransactionHash(result.transaction_hash as `0x${string}`);
+                                setShowRatingTransaction(true);
+                              }
+
                               setRatedMessages(prev => new Set([...prev, message.id]));
                               
                               // Convert backend response to expected format
@@ -1319,6 +1355,11 @@ function ClientOnlyChatPage() {
                               return rewardData;
                             } catch (error) {
                               console.error('Rating submission failed:', error);
+                              
+                              // Set transaction error state
+                              setRatingTransactionError(error as Error);
+                              setShowRatingTransaction(true);
+                              
                               // Fallback to simulation on error
                               setRatedMessages(prev => new Set([...prev, message.id]));
                               setCurrentRatingMessage(null);
@@ -1334,13 +1375,30 @@ function ClientOnlyChatPage() {
                               };
                             }
                           }}
-                          marketStats={marketStats || {
-                            totalRatings: 15420,
-                            averageRating: 76,
-                            rewardPool: 125000,
-                            topRaters: 1250,
-                          }}
+                          marketStats={marketStats}
                         />
+                      )}
+                      
+                      {/* Rating Transaction Status */}
+                      {showRatingTransaction && (
+                        <div className="mt-4">
+                          <TransactionStatus
+                            hash={ratingTransactionHash || undefined}
+                            isLoading={isSubmittingRating}
+                            isSuccess={!!ratingTransactionHash && !ratingTransactionError}
+                            error={ratingTransactionError}
+                            title="Rating Submission"
+                            description={ratingTransactionHash ? "Your rating has been recorded on-chain!" : undefined}
+                            onSuccess={() => {
+                              setTimeout(() => {
+                                setShowRatingTransaction(false);
+                                setRatingTransactionHash(null);
+                                setRatingTransactionError(null);
+                              }, 5000);
+                            }}
+                            className="max-w-2xl"
+                          />
+                        </div>
                       )}
                       
                       {/* ✅ NEW: DAT Minting Panel */}
@@ -1362,14 +1420,22 @@ function ClientOnlyChatPage() {
                             )?.content || 'Previous user message'
                           }
                           aiResponse={message.content}
-                          timestamp={message.timestamp}
+                          timestamp={(() => {
+                            console.log('🔍 Chat Page - Passing timestamp to DAT Panel:', message.timestamp);
+                            console.log('🔍 Chat Page - Message timestamp type:', typeof message.timestamp);
+                            console.log('🔍 Chat Page - Message timestamp instanceof Date:', message.timestamp instanceof Date);
+                            return message.timestamp;
+                          })()}
                           teeAttestation={message.tee_attestation}
                           commitmentHash={message.commitment_hash}
                           isVisible={true}
                           onToggle={() => {
+                            console.log('🚨 User manually closed DAT panel for message:', message.id);
                             setShowDATMintingFor(null);
                           }}
-                          onMintSuccess={(datId, ipfsHash) => handleDATMintSuccess(message.id, datId, ipfsHash)}
+                          onMintSuccess={(datId, ipfsHash, transactionHash, contractAddress, tokenId) => 
+                            handleDATMintSuccess(message.id, datId, ipfsHash, transactionHash, contractAddress, tokenId)
+                          }
                         />
                       )}
                     </div>
@@ -1562,6 +1628,48 @@ function ClientOnlyChatPage() {
           </div>
         </div>
       </div>
+
+      {/* Transaction Result Modal - Prominent popup for transaction display */}
+      {transactionResult && (
+        <TransactionResultModal
+          isOpen={showTransactionModal}
+          onClose={() => {
+            setShowTransactionModal(false);
+            setTransactionResult(null);
+          }}
+          transactionHash={transactionResult.hash}
+          transactionType={transactionResult.type}
+          title={transactionResult.title}
+          description={transactionResult.description}
+          additionalDetails={transactionResult.details}
+        />
+      )}
+
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {toastNotification && (
+          <motion.div
+            initial={{ opacity: 0, y: -50, scale: 0.9 }}
+            animate={{ opacity: toastNotification.visible ? 1 : 0, y: toastNotification.visible ? 0 : -50, scale: toastNotification.visible ? 1 : 0.9 }}
+            exit={{ opacity: 0, y: -50, scale: 0.9 }}
+            transition={{ duration: 0.3, type: "spring", damping: 25, stiffness: 300 }}
+            className={`fixed top-4 left-1/2 transform -translate-x-1/2 z-50 max-w-md w-full mx-4 p-4 rounded-xl shadow-2xl border ${
+              toastNotification.type === 'success' 
+                ? 'bg-green-900/90 border-green-600/50 text-green-100' 
+                : toastNotification.type === 'error'
+                ? 'bg-red-900/90 border-red-600/50 text-red-100'
+                : 'bg-blue-900/90 border-blue-600/50 text-blue-100'
+            } backdrop-blur-sm`}
+          >
+            <div className="flex items-center space-x-3">
+              <span className="text-xl">
+                {toastNotification.type === 'success' ? '✅' : toastNotification.type === 'error' ? '❌' : 'ℹ️'}
+              </span>
+              <span className="font-medium">{toastNotification.message}</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

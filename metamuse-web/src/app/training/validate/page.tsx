@@ -62,13 +62,13 @@ export default function TrainingDataValidationPage() {
           
           <div className="bg-gradient-to-br from-green-500/20 to-green-600/20 border border-green-500/30 rounded-xl p-4">
             <div className="text-green-400 text-xl mb-2">⭐</div>
-            <div className="text-lg font-bold text-white">85%</div>
+            <div className="text-lg font-bold text-white">-</div>
             <div className="text-xs text-green-300">Quality Score Avg</div>
           </div>
           
           <div className="bg-gradient-to-br from-yellow-500/20 to-yellow-600/20 border border-yellow-500/30 rounded-xl p-4">
             <div className="text-yellow-400 text-xl mb-2">🏆</div>
-            <div className="text-lg font-bold text-white">Top 10%</div>
+            <div className="text-lg font-bold text-white">-</div>
             <div className="text-xs text-yellow-300">Validator Ranking</div>
           </div>
         </div>

@@ -15,6 +15,7 @@ import { TemplateSelector } from '@/components/templates/TemplateSelector';
 import { TemplateCustomizer } from '@/components/templates/TemplateCustomizer';
 import { TemplateBuilder } from '@/components/templates/TemplateBuilder';
 import { AvatarSelector } from '@/components/avatars/AvatarSelector';
+import { TransactionStatus } from '@/components/ui/TransactionStatus';
 
 export default function CreateMuse() {
   const { isConnected, address } = useAccount();
@@ -30,6 +31,9 @@ export default function CreateMuse() {
   const [selectedAvatar, setSelectedAvatar] = useState<Avatar | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [transactionHash, setTransactionHash] = useState<`0x${string}` | null>(null);
+  const [transactionError, setTransactionError] = useState<Error | null>(null);
+  const [createdMuseId, setCreatedMuseId] = useState<string | null>(null);
   
   // Modal states
   const [isTemplateSelectorOpen, setIsTemplateSelectorOpen] = useState(false);
@@ -146,17 +150,19 @@ export default function CreateMuse() {
       const result = await response.json();
       console.log('✅ Muse created successfully:', result);
       
-      // Trigger success state (the existing useWaitForTransactionReceipt won't work 
-      // since we're not using direct contract calls anymore)
-      setIsCreating(false);
+      // Extract transaction info from backend response
+      if (result.transaction_hash) {
+        setTransactionHash(result.transaction_hash as `0x${string}`);
+      }
+      if (result.token_id) {
+        setCreatedMuseId(result.token_id);
+      }
       
-      // Redirect to gallery after a short delay
-      setTimeout(() => {
-        window.location.href = '/gallery';
-      }, 1500);
+      setIsCreating(false);
       
     } catch (error) {
       console.error('Error creating muse:', error);
+      setTransactionError(error as Error);
       setIsCreating(false);
     }
   };
@@ -204,7 +210,7 @@ export default function CreateMuse() {
     );
   }
 
-  if (isSuccess) {
+  if (isSuccess || (transactionHash && !isCreating && !transactionError)) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -224,15 +230,40 @@ export default function CreateMuse() {
           <p className="text-gray-400 mb-8">
             Your AI companion has been minted on the blockchain. You can now start chatting!
           </p>
-          <button
-            onClick={() => {
-              // Navigate to the new muse - we'd need to extract token ID from transaction
-              window.location.href = '/gallery';
-            }}
-            className="bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700 text-white px-8 py-3 rounded-lg font-semibold transition-all duration-200"
-          >
-            View My Muses
-          </button>
+          
+          {/* Transaction Details */}
+          {transactionHash && (
+            <div className="mb-8">
+              <TransactionStatus
+                hash={transactionHash}
+                isSuccess={true}
+                title="Muse Creation Transaction"
+                description="Your muse has been permanently recorded on the Metis blockchain"
+                className="max-w-2xl mx-auto"
+              />
+            </div>
+          )}
+          
+          <div className="flex justify-center space-x-4">
+            <button
+              onClick={() => {
+                if (createdMuseId) {
+                  window.location.href = `/chat/${createdMuseId}`;
+                } else {
+                  window.location.href = '/gallery';
+                }
+              }}
+              className="bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700 text-white px-8 py-3 rounded-lg font-semibold transition-all duration-200"
+            >
+              {createdMuseId ? 'Start Chatting' : 'View My Muses'}
+            </button>
+            <button
+              onClick={() => window.location.href = '/gallery'}
+              className="border border-gray-600 hover:border-gray-500 text-gray-300 hover:text-white px-8 py-3 rounded-lg font-semibold transition-all duration-200"
+            >
+              View Gallery
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -771,11 +802,11 @@ export default function CreateMuse() {
               <div className="space-y-4 text-left">
                 <div className="flex justify-between">
                   <span className="text-gray-400">Network:</span>
-                  <span className="text-white">Ethereum</span>
+                  <span className="text-white">Metis Hyperion Testnet</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-400">Gas Fee:</span>
-                  <span className="text-white">~0.01 ETH</span>
+                  <span className="text-white">~0.001 METIS</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-400">Your Wallet:</span>
@@ -784,17 +815,38 @@ export default function CreateMuse() {
               </div>
             </div>
 
+            {/* Transaction Status */}
+            <TransactionStatus
+              hash={transactionHash}
+              isLoading={isCreating}
+              isSuccess={!!transactionHash && !isCreating && !transactionError}
+              error={transactionError}
+              title="Muse Creation"
+              description={transactionHash ? "Your muse has been minted on-chain!" : undefined}
+              onSuccess={() => {
+                // Navigate to the created muse or gallery after success
+                setTimeout(() => {
+                  if (createdMuseId) {
+                    window.location.href = `/chat/${createdMuseId}`;
+                  } else {
+                    window.location.href = '/gallery';
+                  }
+                }, 2000);
+              }}
+              className="max-w-2xl mx-auto mb-6"
+            />
+
             <div className="flex justify-center space-x-4">
               <button
                 onClick={() => setStep(4)}
-                disabled={isCreating}
+                disabled={isCreating || !!transactionHash}
                 className="border border-gray-600 hover:border-gray-500 text-gray-300 hover:text-white px-8 py-3 rounded-lg font-semibold transition-all duration-200 disabled:opacity-50"
               >
                 Back to Preview
               </button>
               <button
                 onClick={handleCreateMuse}
-                disabled={isCreating}
+                disabled={isCreating || !!transactionHash}
                 className="bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700 text-white px-8 py-3 rounded-lg font-semibold transition-all duration-200 disabled:opacity-50 flex items-center space-x-2"
               >
                 {isCreating ? (
@@ -802,6 +854,8 @@ export default function CreateMuse() {
                     <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                     <span>Creating Muse...</span>
                   </>
+                ) : transactionHash ? (
+                  <span>Muse Created! 🎉</span>
                 ) : (
                   <span>Create My Muse</span>
                 )}

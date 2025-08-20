@@ -19,16 +19,17 @@ function MuseDescription({ traits }: { traits: MuseTraits }) {
   );
 }
 
-const demoMuses = [
-  { id: '1', name: 'Creative Visionary', traits: { creativity: 95, wisdom: 60, humor: 75, empathy: 50 } },
-  { id: '2', name: 'Wise Sage', traits: { creativity: 40, wisdom: 95, humor: 45, empathy: 80 } },
-  { id: '3', name: 'Joyful Entertainer', traits: { creativity: 70, wisdom: 30, humor: 95, empathy: 65 } },
-  { id: '4', name: 'Compassionate Heart', traits: { creativity: 55, wisdom: 70, humor: 40, empathy: 95 } },
-  { id: '5', name: 'Balanced Harmony', traits: { creativity: 65, wisdom: 65, humor: 65, empathy: 65 } },
+// Personality archetypes for design system demonstration
+const demoArchetypes = [
+  { id: '1', name: 'Creative Type', traits: { creativity: 95, wisdom: 60, humor: 75, empathy: 50 } },
+  { id: '2', name: 'Wise Type', traits: { creativity: 40, wisdom: 95, humor: 45, empathy: 80 } },
+  { id: '3', name: 'Humorous Type', traits: { creativity: 70, wisdom: 30, humor: 95, empathy: 65 } },
+  { id: '4', name: 'Empathetic Type', traits: { creativity: 55, wisdom: 70, humor: 40, empathy: 95 } },
+  { id: '5', name: 'Balanced Type', traits: { creativity: 65, wisdom: 65, humor: 65, empathy: 65 } },
 ];
 
 export default function DemoPage() {
-  const [selectedMuse, setSelectedMuse] = useState(demoMuses[0]);
+  const [selectedMuse, setSelectedMuse] = useState(demoArchetypes[0]);
   const [customTraits, setCustomTraits] = useState<MuseTraits>({
     creativity: 50,
     wisdom: 50,
@@ -55,7 +56,7 @@ export default function DemoPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8 }}
           >
-            🎨 Personality-Driven Design System
+            🎨 Design System Demo
           </motion.h1>
           <motion.p
             className="text-xl text-gray-300 max-w-3xl mx-auto"
@@ -72,7 +73,7 @@ export default function DemoPage() {
         <section className="mb-16">
           <h2 className="text-2xl font-bold text-white mb-8 text-center">✨ Personality Archetypes</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
-            {demoMuses.map((muse, index) => (
+            {demoArchetypes.map((muse, index) => (
               <motion.div
                 key={muse.id}
                 initial={{ opacity: 0, y: 30 }}
