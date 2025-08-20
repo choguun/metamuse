@@ -1122,23 +1122,82 @@ async fn get_user_muses(
 ) -> Result<impl IntoResponse, StatusCode> {
     println!("🔍 Fetching muses for user: {}", address);
     
-    // Get the user's muse token IDs from our mapping
-    let token_ids = {
-        let user_muses = state.user_muses.read().await;
-        user_muses.get(&address).cloned().unwrap_or_default()
+    // Instead of relying on in-memory mapping, scan blockchain for user's muses
+    let mut user_muses = Vec::new();
+    let max_search_tokens = 50; // Search same range as explore
+    
+    println!("🔍 Scanning blockchain for muses owned by user...");
+    
+    for token_id in 1..=max_search_tokens {
+        match state.blockchain_client.get_muse_data(token_id).await {
+            Ok(muse_data) => {
+                // Check if this muse belongs to the user (case-insensitive comparison)
+                if muse_data.owner.to_lowercase() == address.to_lowercase() {
+                    let muse_info = MuseInfo {
+                        token_id: muse_data.token_id.to_string(),
+                        owner: address.clone(), // Use normalized user address
+                        creativity: muse_data.creativity,
+                        wisdom: muse_data.wisdom,
+                        humor: muse_data.humor,
+                        empathy: muse_data.empathy,
+                        birth_block: muse_data.birth_block,
+                        total_interactions: muse_data.total_interactions,
+                        dna_hash: muse_data.dna_hash,
+                    };
+                    user_muses.push(muse_info);
+                    println!("✅ Found user's muse #{} with traits: C:{}, W:{}, H:{}, E:{}", 
+                        token_id, muse_data.creativity, muse_data.wisdom, muse_data.humor, muse_data.empathy);
+                }
+            }
+            Err(_e) => {
+                // Skip missing tokens silently (same as explore page)
+                
+                // Early termination logic (same as explore)
+                if token_id > 10 && user_muses.is_empty() {
+                    break; // No muses found in first 10, likely none exist
+                }
+                if token_id > user_muses.len() as u64 + 20 && !user_muses.is_empty() {
+                    break; // Likely reached the end of existing muses
+                }
+            }
+        }
+    }
+
+    println!("📋 Found {} muses owned by user on blockchain", user_muses.len());
+
+    let response = MuseListResponse {
+        muses: user_muses.clone(),
+        total_count: user_muses.len(),
     };
 
-    println!("📋 Found {} token IDs for user: {:?}", token_ids.len(), token_ids);
+    println!("🎉 Returning {} real muses owned by user from blockchain", user_muses.len());
+    Ok((StatusCode::OK, Json(response)))
+}
 
-    // Fetch actual muse data from blockchain for each token ID
-    let mut real_muses = Vec::new();
+async fn explore_muses(
+    Query(query): Query<ExploreQuery>,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let limit = query.limit.unwrap_or(12);
     
-    for token_id in &token_ids {
-        match state.blockchain_client.get_muse_data(*token_id).await {
+    println!("🔍 Fetching muses for explore page with limit: {}", limit);
+    
+    // Get all existing muses from blockchain by iterating through token IDs
+    let mut all_muses = Vec::new();
+    
+    // Try to fetch muses starting from token ID 1 up to a reasonable limit
+    // We'll stop when we encounter non-existent tokens or reach our search limit
+    let max_search_tokens = 50; // Reasonable upper bound for efficiency
+    
+    for token_id in 1..=max_search_tokens {
+        match state.blockchain_client.get_muse_data(token_id).await {
             Ok(muse_data) => {
                 let muse_info = MuseInfo {
                     token_id: muse_data.token_id.to_string(),
-                    owner: address.clone(), // Show user's address instead of blockchain owner
+                    owner: format!("0x{}...{}", 
+                        &muse_data.owner[2..8], 
+                        &muse_data.owner[muse_data.owner.len()-4..]
+                    ), // Format owner address for display
                     creativity: muse_data.creativity,
                     wisdom: muse_data.wisdom,
                     humor: muse_data.humor,
@@ -1147,127 +1206,77 @@ async fn get_user_muses(
                     total_interactions: muse_data.total_interactions,
                     dna_hash: muse_data.dna_hash,
                 };
-                real_muses.push(muse_info);
-                println!("✅ Retrieved real muse #{} with traits: c={}, w={}, h={}, e={} (blockchain owner: {}, user: {})", 
-                         token_id, muse_data.creativity, muse_data.wisdom, muse_data.humor, muse_data.empathy,
-                         muse_data.owner, address);
+                all_muses.push(muse_info);
+                println!("✅ Found muse #{} with traits: C:{}, W:{}, H:{}, E:{}", 
+                    token_id, muse_data.creativity, muse_data.wisdom, muse_data.humor, muse_data.empathy);
             }
-            Err(e) => {
-                println!("❌ Failed to get muse data for token {}: {}", token_id, e);
-                // Continue to next muse instead of failing completely
+            Err(_e) => {
+                // If we can't find this token, it might not exist
+                // Skip missing tokens silently to reduce log spam
+                
+                // Stop searching after encountering several consecutive missing tokens
+                if token_id > 10 && all_muses.is_empty() {
+                    break; // No muses found in first 10, likely none exist
+                }
+                
+                // If we haven't found any new muses in the last 20 attempts, stop
+                if token_id > all_muses.len() as u64 + 20 && !all_muses.is_empty() {
+                    break; // Likely reached the end of existing muses
+                }
             }
         }
     }
 
-    // If no real muses found, return empty array (cleaner UX)
-    if real_muses.is_empty() {
-        println!("ℹ️ No muses found for user '{}' - returning empty collection", address);
-        let response = MuseListResponse {
-            muses: vec![],
-            total_count: 0,
-        };
-        return Ok((StatusCode::OK, Json(response)));
-    }
+    println!("📋 Found {} total muses before filtering", all_muses.len());
 
-    let response = MuseListResponse {
-        muses: real_muses.clone(),
-        total_count: real_muses.len(),
-    };
-
-    println!("🎉 Returning {} real muses with user's configured traits", real_muses.len());
-    Ok((StatusCode::OK, Json(response)))
-}
-
-async fn explore_muses(
-    Query(query): Query<ExploreQuery>,
-    State(_state): State<Arc<AppState>>,
-) -> Result<impl IntoResponse, StatusCode> {
-    let limit = query.limit.unwrap_or(12);
-    
-    // Generate mock data for exploration
-    let mut mock_muses = vec![
-        MuseInfo {
-            token_id: "3".to_string(),
-            owner: "0xabc123".to_string(),
-            creativity: 85,
-            wisdom: 60,
-            humor: 75,
-            empathy: 45,
-            birth_block: 12345,
-            total_interactions: 142,
-            dna_hash: "0x123456789abcdef".to_string(),
-        },
-        MuseInfo {
-            token_id: "4".to_string(),
-            owner: "0xdef456".to_string(),
-            creativity: 30,
-            wisdom: 95,
-            humor: 40,
-            empathy: 80,
-            birth_block: 12350,
-            total_interactions: 89,
-            dna_hash: "0xfedcba987654321".to_string(),
-        },
-        MuseInfo {
-            token_id: "5".to_string(),
-            owner: "0xghi789".to_string(),
-            creativity: 70,
-            wisdom: 55,
-            humor: 90,
-            empathy: 65,
-            birth_block: 12360,
-            total_interactions: 203,
-            dna_hash: "0xabcdef123456789".to_string(),
-        },
-        MuseInfo {
-            token_id: "6".to_string(),
-            owner: "0xjkl012".to_string(),
-            creativity: 45,
-            wisdom: 70,
-            humor: 35,
-            empathy: 95,
-            birth_block: 12365,
-            total_interactions: 67,
-            dna_hash: "0x987654321fedcba".to_string(),
-        },
-    ];
-
-    // Apply simple filtering based on personality
+    // Apply filtering based on personality
     if let Some(filter) = &query.personality_filter {
         match filter.as_str() {
-            "creative" => mock_muses.retain(|m| m.creativity > 70),
-            "wise" => mock_muses.retain(|m| m.wisdom > 70),
-            "humorous" => mock_muses.retain(|m| m.humor > 70),
-            "empathetic" => mock_muses.retain(|m| m.empathy > 70),
+            "creative" => all_muses.retain(|m| m.creativity > 70),
+            "wise" => all_muses.retain(|m| m.wisdom > 70),
+            "humorous" => all_muses.retain(|m| m.humor > 70),
+            "empathetic" => all_muses.retain(|m| m.empathy > 70),
             _ => {}
         }
+        println!("🎯 After {} filtering: {} muses", filter, all_muses.len());
     }
 
     // Apply sorting
     if let Some(sort_by) = &query.sort_by {
         match sort_by.as_str() {
-            "interactions" => mock_muses.sort_by(|a, b| b.total_interactions.cmp(&a.total_interactions)),
+            "interactions" => {
+                all_muses.sort_by(|a, b| b.total_interactions.cmp(&a.total_interactions));
+                println!("📊 Sorted by interactions");
+            }
             "random" => {
                 use std::collections::hash_map::DefaultHasher;
                 use std::hash::{Hash, Hasher};
-                mock_muses.sort_by_key(|m| {
+                all_muses.sort_by_key(|m| {
                     let mut hasher = DefaultHasher::new();
                     m.token_id.hash(&mut hasher);
                     hasher.finish()
                 });
+                println!("🎲 Sorted randomly");
             },
-            _ => {} // "newest" is default order
+            _ => {
+                // "newest" - reverse order so highest token IDs (newest) come first
+                all_muses.sort_by(|a, b| b.token_id.cmp(&a.token_id));
+                println!("🆕 Sorted by newest");
+            }
         }
     }
 
+    let total_before_limit = all_muses.len();
+
     // Apply limit
-    mock_muses.truncate(limit);
+    all_muses.truncate(limit);
 
     let response = MuseListResponse {
-        muses: mock_muses,
-        total_count: 6, // Total before filtering
+        muses: all_muses,
+        total_count: total_before_limit,
     };
 
+    println!("🎉 Returning {} real blockchain muses for explore", response.muses.len());
     Ok((StatusCode::OK, Json(response)))
 }
 
