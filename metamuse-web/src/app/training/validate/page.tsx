@@ -76,7 +76,6 @@ export default function TrainingDataValidationPage() {
         {/* Training Data Validation Component */}
         <TrainingDataValidation
           onValidationComplete={(contributionId, approved) => {
-            console.log('Validation completed:', { contributionId, approved });
             setValidatedCount(prev => prev + 1);
             
             // Show success message
@@ -84,60 +83,10 @@ export default function TrainingDataValidationPage() {
               `✅ Contribution ${contributionId} approved! You earned 1 DAT token.` :
               `❌ Contribution ${contributionId} rejected. Feedback provided to contributor.`;
             
-            // You could show a toast notification here
-            console.log(message);
+            // You could show a toast notification here instead
           }}
         />
 
-        {/* Testing Instructions */}
-        <div className="mt-8 bg-gray-900 rounded-xl border border-gray-700 p-6">
-          <h3 className="text-lg font-semibold text-white mb-4">🧪 Validation Testing Guide</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
-            
-            <div className="space-y-3">
-              <h4 className="text-white font-medium">Validation Features to Test:</h4>
-              <ul className="space-y-1 text-gray-300">
-                <li>📋 <strong>Pending Contributions List</strong> - View all pending validations</li>
-                <li>👁️ <strong>Side-by-side Comparison</strong> - Original vs improved data</li>
-                <li>✅❌ <strong>Approve/Reject System</strong> - Binary validation decision</li>
-                <li>📊 <strong>Quality Scoring</strong> - 0-100 quality assessment slider</li>
-                <li>💬 <strong>Validation Feedback</strong> - Optional feedback for contributors</li>
-                <li>🎯 <strong>Real-time Updates</strong> - Live contribution status changes</li>
-              </ul>
-            </div>
-            
-            <div className="space-y-3">
-              <h4 className="text-white font-medium">Testing Workflow:</h4>
-              <ol className="space-y-1 text-gray-300 list-decimal list-inside">
-                <li>Connect wallet to access validation interface</li>
-                <li>Review pending contributions from left panel</li>
-                <li>Click contribution to view details in right panel</li>
-                <li>Compare original vs improved data carefully</li>
-                <li>Set quality score using the slider (0-100)</li>
-                <li>Choose approve ✅ or reject ❌</li>
-                <li>Optional: Add validation feedback</li>
-                <li>Submit validation to earn 1 DAT token</li>
-                <li>Contribution moves from pending to validated</li>
-              </ol>
-            </div>
-          </div>
-          
-          <div className="mt-4 space-y-2">
-            <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-              <p className="text-blue-300 text-sm">
-                <strong>💡 Tip:</strong> You can only validate contributions from other users, not your own. 
-                Each validation earns you 1 DAT token regardless of approve/reject decision.
-              </p>
-            </div>
-            
-            <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
-              <p className="text-green-300 text-sm">
-                <strong>🎯 Quality Guidelines:</strong> Rate based on improvement quality, accuracy, 
-                creativity enhancement, and alignment with muse personality traits.
-              </p>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );

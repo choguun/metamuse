@@ -72,7 +72,6 @@ export default function TrainingDataContributePage() {
           originalMessage="This is a sample AI response that could be improved. It's factually correct but could be more engaging and personality-driven."
           improvedMessage="Here's my improved version with better personality, more engaging tone, and enhanced creativity while maintaining accuracy."
           onSuccess={(contributionId, rewardAmount) => {
-            console.log('Contribution successful:', { contributionId, rewardAmount });
             // Navigate to marketplace stats or show success message
             setTimeout(() => {
               router.push('/training');
@@ -83,44 +82,6 @@ export default function TrainingDataContributePage() {
           }}
         />
 
-        {/* Testing Instructions */}
-        <div className="mt-8 bg-gray-900 rounded-xl border border-gray-700 p-6">
-          <h3 className="text-lg font-semibold text-white mb-4">🧪 Testing Instructions</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
-            
-            <div className="space-y-3">
-              <h4 className="text-white font-medium">Contribution Types to Test:</h4>
-              <ul className="space-y-1 text-gray-300">
-                <li>✏️ <strong>Conversation Correction</strong> - Fix grammar/accuracy (1.2x reward)</li>
-                <li>⭐ <strong>Preference Feedback</strong> - Share behavioral preferences (1.0x reward)</li>
-                <li>📊 <strong>Quality Rating</strong> - Rate response helpfulness (1.1x reward)</li>
-                <li>🎭 <strong>Personality Tuning</strong> - Enhance personality traits (1.5x reward)</li>
-                <li>📚 <strong>Conversation Curation</strong> - Curate valuable examples (1.3x reward)</li>
-                <li>🧠 <strong>Semantic Enhancement</strong> - Improve understanding (1.25x reward)</li>
-              </ul>
-            </div>
-            
-            <div className="space-y-3">
-              <h4 className="text-white font-medium">Form Features to Test:</h4>
-              <ul className="space-y-1 text-gray-300">
-                <li>📝 Original/improved data input fields</li>
-                <li>🎯 Difficulty level slider (1-10)</li>
-                <li>📂 Improvement category selection</li>
-                <li>🔗 Reference URLs (optional)</li>
-                <li>🏷️ Tags for categorization</li>
-                <li>💰 Real-time reward estimation</li>
-                <li>📊 Detailed reward calculation breakdown</li>
-              </ul>
-            </div>
-          </div>
-          
-          <div className="mt-4 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-            <p className="text-yellow-300 text-sm">
-              <strong>Note:</strong> Make sure the backend API is running on port 8080 and you have a wallet connected. 
-              The contribution will be stored on IPFS and may take a few seconds to process.
-            </p>
-          </div>
-        </div>
       </div>
     </div>
   );
