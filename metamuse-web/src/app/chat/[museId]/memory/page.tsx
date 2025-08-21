@@ -151,7 +151,7 @@ function MemoryInsights({
   }, {} as Record<string, number>);
 
   const topEmotions = Object.entries(emotionalDistribution)
-    .sort(([,a], [,b]) => b - a)
+    .sort(([,a], [,b]) => (b as number) - (a as number))
     .slice(0, 3);
 
   return (
@@ -184,7 +184,7 @@ function MemoryInsights({
         <h3 className="text-lg font-semibold text-white mb-4">Categories</h3>
         <div className="space-y-3">
           {Object.entries(stats.category_breakdown).map(([category, count]) => {
-            const percentage = (count / stats.total_memories) * 100;
+            const percentage = ((count as number) / stats.total_memories) * 100;
             const color = memoryHelpers.getCategoryColor(category as any);
             const icon = memoryHelpers.getCategoryIcon(category as any);
             
@@ -195,7 +195,7 @@ function MemoryInsights({
                     <span>{icon}</span>
                     <span className="capitalize">{category.replace('_', ' ')}</span>
                   </span>
-                  <span className="text-gray-400">{count}</span>
+                  <span className="text-gray-400">{count as number}</span>
                 </div>
                 <div className="w-full bg-gray-700 rounded-full h-2">
                   <div 
@@ -221,7 +221,7 @@ function MemoryInsights({
               key={tag}
               className="bg-purple-500/20 text-purple-300 px-2 py-1 rounded text-xs border border-purple-500/30"
             >
-              #{tag} ({count})
+              #{tag} ({count as number})
             </span>
           ))}
         </div>
@@ -236,12 +236,12 @@ function MemoryInsights({
               <div key={emotion} className="space-y-1">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-300 capitalize">{emotion}</span>
-                  <span className="text-gray-400">{(intensity * 100).toFixed(0)}%</span>
+                  <span className="text-gray-400">{((intensity as number) * 100).toFixed(0)}%</span>
                 </div>
                 <div className="w-full bg-gray-700 rounded-full h-2">
                   <div 
                     className="h-2 rounded-full bg-gradient-to-r from-pink-500 to-purple-500"
-                    style={{ width: `${intensity * 100}%` }}
+                    style={{ width: `${(intensity as number) * 100}%` }}
                   />
                 </div>
               </div>

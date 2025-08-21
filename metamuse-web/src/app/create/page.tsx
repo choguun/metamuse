@@ -69,17 +69,16 @@ export default function CreateMuse() {
     } else {
       // Apply template immediately if no variables
       handleTemplateApplied({
-        template_id: template.id,
+        template_used: template.id,
         system_prompt: template.base_personality.system_prompt,
-        adjusted_traits: traits,
-        variables: {},
+        variables_applied: {},
       });
     }
   };
 
   const handleTemplateApplied = (appliedTemplate: TemplateApplyResponse) => {
     setAppliedTemplate(appliedTemplate);
-    setTraits(appliedTemplate.adjusted_traits || {
+    setTraits({
       creativity: 50,
       wisdom: 50,
       humor: 50,
@@ -126,7 +125,7 @@ export default function CreateMuse() {
       if (selectedTemplate && appliedTemplate) {
         museData.template_id = selectedTemplate.id;
         museData.system_prompt = appliedTemplate.system_prompt;
-        museData.template_variables = appliedTemplate.variables;
+        museData.template_variables = appliedTemplate.variables_applied;
       }
 
       // Include avatar data if selected
@@ -817,7 +816,7 @@ export default function CreateMuse() {
 
             {/* Transaction Status */}
             <TransactionStatus
-              hash={transactionHash}
+              hash={transactionHash || undefined}
               isLoading={isCreating}
               isSuccess={!!transactionHash && !isCreating && !transactionError}
               error={transactionError}

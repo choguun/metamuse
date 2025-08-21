@@ -286,7 +286,7 @@ export const getAnimationPreset = (animation: PersonalityTheme['animation']) => 
     case 'fluid':
       return {
         duration: 4,
-        ease: "easeInOut",
+        ease: "easeInOut" as const,
         repeat: Infinity,
         repeatType: "reverse" as const,
       };
@@ -299,21 +299,21 @@ export const getAnimationPreset = (animation: PersonalityTheme['animation']) => 
     case 'organic':
       return {
         duration: 3,
-        ease: "easeInOut",
+        ease: "easeInOut" as const,
         repeat: Infinity,
         repeatType: "reverse" as const,
       };
     case 'soft':
       return {
         duration: 5,
-        ease: "easeInOut",
+        ease: "easeInOut" as const,
         repeat: Infinity,
         repeatType: "reverse" as const,
       };
     default:
       return {
         duration: 4,
-        ease: "easeInOut",
+        ease: "easeInOut" as const,
         repeat: Infinity,
         repeatType: "reverse" as const,
       };

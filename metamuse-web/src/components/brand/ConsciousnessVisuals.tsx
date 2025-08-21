@@ -38,7 +38,7 @@ export function ConsciousnessVisuals({
       lg: { width: 400, height: 300, strokeWidth: 2.5 },
       xl: { width: 600, height: 450, strokeWidth: 3 },
     };
-    return configs[size] || configs.md;
+    return configs[size as keyof typeof configs] || configs.md;
   };
 
   const sizeConfig = getSizeConfig(size);
@@ -46,7 +46,7 @@ export function ConsciousnessVisuals({
 
   const getIntensityAlpha = (intensity: string) => {
     const alphas = { subtle: 0.3, medium: 0.6, intense: 0.9 };
-    return alphas[intensity] || alphas.medium;
+    return alphas[intensity as keyof typeof alphas] || alphas.medium;
   };
 
   const intensityAlpha = getIntensityAlpha(intensity);

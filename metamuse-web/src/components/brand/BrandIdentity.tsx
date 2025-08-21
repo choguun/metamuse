@@ -59,7 +59,7 @@ export function BrandIdentity({
         height: 'h-24'
       },
     };
-    return configs[size] || configs.md;
+    return configs[size as keyof typeof configs] || configs.md;
   };
 
   const sizeConfig = getSizeConfig(size);

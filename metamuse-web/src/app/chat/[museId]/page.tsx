@@ -768,7 +768,7 @@ function ClientOnlyChatPage() {
     return message.role === 'assistant' && 
            !mintedDATs.has(message.id) &&
            !datMintingInProgress.has(message.id) &&
-           message.content && // Must have actual content
+           typeof message.content === 'string' && // Must be string content
            message.content.trim().length > 0; // Not empty
   };
 

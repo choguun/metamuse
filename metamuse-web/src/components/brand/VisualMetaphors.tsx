@@ -40,7 +40,7 @@ export function VisualMetaphors({
       lg: { width: 240, height: 240, scale: 1.3 },
       xl: { width: 320, height: 320, scale: 1.6 },
     };
-    return configs[size] || configs.md;
+    return configs[size as keyof typeof configs] || configs.md;
   };
 
   const sizeConfig = getSizeConfig(size);
@@ -53,7 +53,7 @@ export function VisualMetaphors({
       active: 0.8,
       transcendent: 1.0,
     };
-    return intensities[state] || intensities.active;
+    return intensities[state as keyof typeof intensities] || intensities.active;
   };
 
   const intensity = getStateIntensity(state);
@@ -387,7 +387,7 @@ export function VisualMetaphors({
       'thought-emergence': 'Thought Emergence',
       'cognitive-bloom': 'Cognitive Bloom',
     };
-    return labels[type] || type.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase());
+    return labels[type as keyof typeof labels] || type.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase());
   };
 
   return (

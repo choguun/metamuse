@@ -36,7 +36,7 @@ export function BrandPatterns({
       medium: { elements: 30, spacing: 50, strokeWidth: 1.5 },
       dense: { elements: 50, spacing: 30, strokeWidth: 2 },
     };
-    return configs[density] || configs.medium;
+    return configs[density as keyof typeof configs] || configs.medium;
   };
 
   const densityConfig = getDensityConfig(density);
@@ -371,7 +371,7 @@ export function BrandOverlay({
       subtle: { opacity: 0.08, blur: 'blur-none' },
       medium: { opacity: 0.15, blur: 'blur-none' },
     };
-    return configs[intensity] || configs.subtle;
+    return configs[intensity as keyof typeof configs] || configs.subtle;
   };
 
   const config = getIntensityConfig(intensity);
