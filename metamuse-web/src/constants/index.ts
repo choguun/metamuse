@@ -2,6 +2,7 @@ import { type ContractAddresses } from '@/types';
 
 // API Configuration
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+export const API_FALLBACK_URL = process.env.NEXT_PUBLIC_API_FALLBACK_URL || 'http://localhost';
 
 // Blockchain Configuration
 export const CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID) || 133717; // Default to Metis Hyperion Testnet
