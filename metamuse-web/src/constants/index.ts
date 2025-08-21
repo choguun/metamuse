@@ -223,6 +223,6 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
   { name: 'Create Muse', href: '/create', icon: '✨' },
   { name: 'My Muses', href: '/gallery', icon: '🎭' },
   { name: 'Explore', href: '/explore', icon: '🔍' },
-  { name: 'Training Market', href: '/training', icon: '🏭' },
+  // { name: 'Training Market', href: '/training', icon: '🏭' },
   { name: 'My DATs', href: '/dats', icon: '🏷️' },
 ];
