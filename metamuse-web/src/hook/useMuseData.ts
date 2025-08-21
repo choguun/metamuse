@@ -168,7 +168,7 @@ export function useMuseList(type: 'owned' | 'all' = 'all', ownerAddress?: string
       }
       
       setTotal(response.total);
-      setHasMore('has_more' in response ? response.has_more : response.muses.length === limit);
+      setHasMore('has_more' in response ? Boolean(response.has_more) : response.muses.length === limit);
       
     } catch (err) {
       const errorMessage = apiHelpers.formatError(err);

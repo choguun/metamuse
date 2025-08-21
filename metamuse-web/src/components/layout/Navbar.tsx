@@ -43,7 +43,7 @@ function WalletSectionClient() {
           openConnectModal,
           authenticationStatus,
           mounted,
-        }) => {
+        }: any) => {
           const ready = mounted && authenticationStatus !== 'loading';
           const connected =
             ready &&

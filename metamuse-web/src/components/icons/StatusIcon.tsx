@@ -63,12 +63,12 @@ export function StatusIcon({
       rated: { icon: 'rating', label: 'Rated', color: 'text-yellow-400', pulse: true },
     };
     
-    return configs[status] || configs.info;
+    return configs[status as keyof typeof configs] || configs.info;
   };
 
   const config = getStatusConfig(status);
-  const isAnimated = animated || config.animated;
-  const shouldPulse = pulse || config.pulse;
+  const isAnimated = animated || (config as any).animated || false;
+  const shouldPulse = pulse || (config as any).pulse || false;
 
   return (
     <div className={`flex items-center space-x-2 ${className}`}>

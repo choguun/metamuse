@@ -206,6 +206,7 @@ export function useChat(museId: string, options: UseChatOptions = {}) {
       const historicalMessages: ChatMessage[] = historyData.messages.map(msg => ({
         ...msg,
         timestamp: safeTimestamp(msg.timestamp),
+        verification_status: msg.verification_status as 'pending' | 'committed' | 'verified' | 'failed' | undefined,
       }));
 
       return historicalMessages;

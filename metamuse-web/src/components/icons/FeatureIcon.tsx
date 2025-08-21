@@ -217,7 +217,7 @@ export function FeatureIcon({
       premium: { color: 'text-purple-400', bg: 'bg-purple-500/20', label: 'Premium' },
     };
     
-    return statusConfigs[status] || statusConfigs.available;
+    return statusConfigs[status as keyof typeof statusConfigs] || statusConfigs.available;
   };
 
   const config = getFeatureConfig(feature);

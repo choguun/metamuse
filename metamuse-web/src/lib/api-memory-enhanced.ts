@@ -283,12 +283,10 @@ export const enhancedMemoryApi = {
       console.warn('Stats fetch failed, returning defaults:', error);
       return {
         total_memories: 0,
-        categories: {},
+        category_breakdown: {},
+        top_tags: {},
+        emotional_distribution: {},
         average_importance: 0,
-        oldest_memory: Date.now(),
-        newest_memory: Date.now(),
-        retention_breakdown: { Critical: 0, High: 0, Medium: 0, Low: 0 },
-        access_frequency: 0,
       };
     }
   },
@@ -300,25 +298,29 @@ export const enhancedMemoryApi = {
       const entries = enhanced.memories.map(mem => ({
         date: new Date(mem.timestamp).toISOString().split('T')[0],
         memories: [mem],
-        count: 1,
+        memory_count: 1,
+        avg_importance: mem.importance,
+        dominant_emotions: mem.tags || [],
       }));
       
       return {
-        entries,
-        oldest_date: entries.length > 0 ? entries[entries.length - 1].date : new Date().toISOString().split('T')[0],
-        newest_date: entries.length > 0 ? entries[0].date : new Date().toISOString().split('T')[0],
+        timeline: entries,
+        date_range: {
+          start: entries.length > 0 ? entries[entries.length - 1].date : new Date().toISOString().split('T')[0],
+          end: entries.length > 0 ? entries[0].date : new Date().toISOString().split('T')[0],
+        },
         total_days: entries.length,
-        total_memories: enhanced.memories.length,
       };
     } catch (error) {
       console.warn('Timeline fetch failed, returning empty:', error);
       const today = new Date().toISOString().split('T')[0];
       return {
-        entries: [],
-        oldest_date: today,
-        newest_date: today,
+        timeline: [],
+        date_range: {
+          start: today,
+          end: today,
+        },
         total_days: 0,
-        total_memories: 0,
       };
     }
   },

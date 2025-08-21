@@ -61,7 +61,7 @@ export function PersonalityIcon({
       // Wisdom variation: Add geometric precision
       return basePath.replace(/[0-9]+/g, (match) => {
         const num = parseInt(match);
-        return Math.round(num / 2) * 2; // Make coordinates even for precision
+        return (Math.round(num / 2) * 2).toString(); // Make coordinates even for precision
       });
     }
     

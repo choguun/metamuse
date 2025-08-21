@@ -105,7 +105,7 @@ export function ThemedContainer({
               `linear-gradient(360deg, ${theme.gradient.map(c => c + Math.round(0.12 * intensityMultiplier * 255).toString(16).padStart(2, '0')).join(', ')})`,
             ],
           },
-          transition: { duration: 8, repeat: Infinity, ease: "linear" },
+          transition: { duration: 8, repeat: Infinity, ease: "linear" as const },
         };
       
       case 'geometric':
@@ -114,7 +114,7 @@ export function ThemedContainer({
             rotate: [0, 0.5, 0],
             scale: [1, 1.001, 1],
           },
-          transition: { duration: 6, repeat: Infinity, ease: "easeInOut" },
+          transition: { duration: 6, repeat: Infinity, ease: "easeInOut" as const },
         };
       
       case 'organic':
@@ -123,7 +123,7 @@ export function ThemedContainer({
             borderRadius: ['1rem', '1.5rem', '1.2rem', '1rem'],
             scale: [1, 1.002, 1],
           },
-          transition: { duration: 4, repeat: Infinity, ease: "easeInOut" },
+          transition: { duration: 4, repeat: Infinity, ease: "easeInOut" as const },
         };
       
       case 'soft':
@@ -135,7 +135,7 @@ export function ThemedContainer({
               `0 4px 20px ${theme.getPrimaryWithOpacity(0.15 * intensityMultiplier)}`,
             ],
           },
-          transition: { duration: 5, repeat: Infinity, ease: "easeInOut" },
+          transition: { duration: 5, repeat: Infinity, ease: "easeInOut" as const },
         };
       
       default:
@@ -178,7 +178,7 @@ export function ThemedContainer({
       {...getInteractiveProps()}
     >
       {/* Personality-based background pattern */}
-      {animated && intensity !== 'minimal' && (
+      {animated && intensity !== 'subtle' && (
         <div
           className="absolute inset-0 opacity-5 pointer-events-none"
           style={{
@@ -208,7 +208,7 @@ export function ThemedContainer({
             scale: [0.8, 1.2, 0.8],
             opacity: [0.4, 0.8, 0.4],
           }}
-          transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+          transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" as const }}
         />
       )}
     </motion.div>

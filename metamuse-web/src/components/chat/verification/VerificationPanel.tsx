@@ -8,6 +8,7 @@ import { TransactionStatus } from '@/components/ui/TransactionStatus';
 
 interface VerificationPanelProps {
   messageId: string;
+  museId: string;
   sessionId: string;
   userMessage: string;
   aiResponse: string;
@@ -27,6 +28,7 @@ interface VerificationStep {
 
 export function VerificationPanel({
   messageId,
+  museId,
   sessionId,
   userMessage,
   aiResponse,
@@ -150,17 +152,18 @@ export function VerificationPanel({
       });
 
       // Call backend verification API
-      const result = await api.verification.request({
+      const result = await api.verification.requestVerification({
         interaction_id: messageId,
         commitment_hash: `0x${messageId.replace(/-/g, '')}`, // Generate commitment hash from messageId
-        user_signature: `sig_${address}_${messageId}`, // Mock signature
+        signature: `sig_${address}_${messageId}`, // Mock signature
+        muse_id: museId,
       });
 
       console.log('✅ Verification requested successfully:', result);
 
       // Handle transaction hash if available
-      if (result.transaction_hash) {
-        setTransactionHash(result.transaction_hash as `0x${string}`);
+      if (result.tx_hash) {
+        setTransactionHash(result.tx_hash as `0x${string}`);
       }
 
       const verificationInfo = {

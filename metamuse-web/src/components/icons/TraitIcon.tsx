@@ -1,9 +1,18 @@
 'use client';
 
-import { PersonalityIcon, IconSize } from './PersonalityIcon';
+import { PersonalityIcon, IconSize, IconType } from './PersonalityIcon';
 import { MuseTraits } from '@/types';
 
 export type TraitType = 'creativity' | 'wisdom' | 'humor' | 'empathy' | 'balanced';
+
+// Map TraitType to IconType
+const traitToIconMapping: Record<TraitType, IconType> = {
+  creativity: 'creative',
+  wisdom: 'wisdom',
+  humor: 'humor', 
+  empathy: 'empathy',
+  balanced: 'balanced',
+};
 
 interface TraitIconProps {
   trait: TraitType;
@@ -60,7 +69,7 @@ export function TraitIcon({
   return (
     <div className={`flex items-center space-x-2 ${className}`}>
       <PersonalityIcon
-        type={trait}
+        type={traitToIconMapping[trait]}
         traits={traits}
         size={size}
         animated={animated || isHighTrait}

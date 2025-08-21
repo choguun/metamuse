@@ -3,13 +3,13 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAccount } from 'wagmi';
-import { PersonalityTraits } from '@/types';
+import { MuseTraits } from '@/types';
 import api from '@/lib/api';
 import { TransactionStatus } from '@/components/ui/TransactionStatus';
 import { CONTRACTS } from '@/constants';
 
 interface DATMintingPanelProps {
-  traits: PersonalityTraits;
+  traits: MuseTraits;
   messageId: string;
   sessionId: string;
   userMessage: string;
@@ -316,7 +316,7 @@ export function DATMintingPanel({
     }
   };
 
-  const getTraitColor = (trait: keyof PersonalityTraits): string => {
+  const getTraitColor = (trait: keyof MuseTraits): string => {
     const colors = {
       creativity: '#FF6B6B',
       wisdom: '#4ECDC4', 
@@ -327,8 +327,8 @@ export function DATMintingPanel({
   };
 
   const dominantTrait = Object.entries(traits).reduce((a, b) => 
-    traits[a[0] as keyof PersonalityTraits] > traits[b[0] as keyof PersonalityTraits] ? a : b
-  )[0] as keyof PersonalityTraits;
+    traits[a[0] as keyof MuseTraits] > traits[b[0] as keyof MuseTraits] ? a : b
+  )[0] as keyof MuseTraits;
 
   return (
     <AnimatePresence>

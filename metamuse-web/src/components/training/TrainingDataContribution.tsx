@@ -242,7 +242,7 @@ export function TrainingDataContribution({
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-400">DAT Tokens Earned:</span>
-                  <span className="text-green-300 font-medium">{Math.round(result.reward_amount / 1000)} DAT</span>
+                  <span className="text-green-300 font-medium">{Math.round((result.reward_amount || 0) / 1000)} DAT</span>
                 </div>
                 <div className="text-xs text-gray-500 mt-2">
                   {result.reward_calculation.reasoning.map((reason: string, i: number) => (
