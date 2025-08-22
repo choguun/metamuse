@@ -1,6 +1,5 @@
 use axum::Router;
 use std::sync::Arc;
-use tower_http::cors::CorsLayer;
 use dotenv::dotenv;
 use tokio::sync::{Mutex, RwLock};
 use std::collections::HashMap;
@@ -156,8 +155,7 @@ async fn main() -> Result<(), anyhow::Error> {
         .merge(route::avatar_routes())
         .merge(route::training_data_routes())
         .merge(route::dat_routes())
-        .with_state(app_state)
-        .layer(CorsLayer::permissive());
+        .with_state(app_state);
     
     // Start server
     let addr = "0.0.0.0:8080".parse::<std::net::SocketAddr>()?;
