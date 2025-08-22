@@ -111,10 +111,15 @@ async fn main() -> Result<(), anyhow::Error> {
     println!("🖼️ Avatar Manager initialized - Complete avatar upload and management system");
     println!("🏭 Training Data Marketplace initialized - First decentralized AI training data economy with DAT rewards");
     
-    // Initialize demo embeddings for semantic search
-    if let Err(e) = semantic_search.initialize_demo_embeddings().await {
-        println!("⚠️ Failed to initialize demo embeddings: {}", e);
-    }
+    // Initialize demo embeddings for semantic search in background (non-blocking)
+    let semantic_search_init = semantic_search.clone();
+    tokio::spawn(async move {
+        if let Err(e) = semantic_search_init.initialize_demo_embeddings().await {
+            println!("⚠️ Failed to initialize demo embeddings: {}", e);
+        } else {
+            println!("✅ Demo embeddings initialized successfully");
+        }
+    });
     
     // Create app state
     let app_state = Arc::new(AppState {
