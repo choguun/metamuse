@@ -1,11 +1,5 @@
 import { getDefaultConfig } from '@rainbow-me/rainbowkit';
 import {
-  mainnet,
-  polygon,
-  optimism,
-  arbitrum,
-  base,
-  sepolia,
   hardhat,
 } from 'wagmi/chains';
 import { CHAIN_ID } from '@/constants';
@@ -65,7 +59,7 @@ const getChains = () => {
     return [metisHyperionTestnet, localChain, hardhat];
   }
   
-  return [metisHyperionTestnet, mainnet, polygon, optimism, arbitrum, base];
+  return [metisHyperionTestnet];
 };
 
 export const config = getDefaultConfig({
